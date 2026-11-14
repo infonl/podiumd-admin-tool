@@ -18,6 +18,8 @@ and keeps an append-only Audit Log of every attempted action.
   quality gates and the local development loop.
 - [docs/research/podiumd.md](docs/research/podiumd.md): facts about PodiumD the
   design relies on.
+- [docs/install.md](docs/install.md): installing an Admin Tool Instance with the
+  Helm chart.
 - [openspec/](openspec/): change proposals, designs, specs and task lists.
 
 ## Repository layout
@@ -29,6 +31,7 @@ and keeps an append-only Audit Log of every attempted action.
 | `e2e/`       | Playwright BDD end-to-end tests                              |
 | `docs/`      | ADRs, development requirements and research                  |
 | `Dockerfile` | The one container image: built frontend plus backend         |
+| `charts/`    | The `podiumd-admin` Helm chart and its helm-unittest tests   |
 
 ## Development
 
@@ -71,6 +74,9 @@ workflow or a doc; change the file in the table instead.
 | Node.js and Python base images                     | `.nvmrc`, `backend/.python-version` (version); digest in `Dockerfile` | `docker build --build-arg` from the version files | the same `docker build` command (see "Container image")                                             |
 | uv in the image                                    | `required-version` (version); digest in `Dockerfile`                  | uv refuses another version, failing the build     | the same                                                                                            |
 | Trivy                                              | `FROM` in `.github/tools/trivy/Dockerfile`                            | `.github/scripts/image-scan.sh`                   | `.github/scripts/image-scan.sh`                                                                     |
+| Helm and helm-unittest                             | `FROM` in `.github/tools/helm-unittest/Dockerfile`                    | `.github/scripts/chart-check.sh`                  | `.github/scripts/chart-check.sh` (or `.github/scripts/check.sh chart`)                              |
+| kubeconform                                        | `FROM` in `.github/tools/kubeconform/Dockerfile`                      | `.github/scripts/chart-check.sh`                  | `.github/scripts/chart-check.sh` (or `.github/scripts/check.sh chart`)                              |
+| Supported Kubernetes versions                      | `charts/podiumd-admin/tests/kubernetes-versions`                      | `.github/scripts/chart-check.sh kubeconform`      | the same                                                                                            |
 
 The uv pin is exact and Dependabot does not bump it: when Dependabot reports a
 uv version mismatch, bump `required-version` by hand in a PR ([#22](https://github.com/infonl/podiumd-admin-tool/issues/22)).
@@ -98,7 +104,7 @@ that the image's Node.js, Python and uv match the version files. After a Node.js
 Python or uv bump, update the matching digest in the `Dockerfile` too, with
 `docker buildx imagetools inspect <image>:<tag>`; the build fails until you
 do. Dependabot cannot update these digests (it cannot resolve the build-arg
-tags); it does update the Trivy image.
+tags); it does update the Trivy, helm-unittest and kubeconform images.
 
 After a version bump, update locally with `uv self update <version>` (or
 `brew upgrade uv`), `nvm install` in the repository root, and `uv sync` and
@@ -150,6 +156,18 @@ version check, the build, the smoke test (read-only root filesystem,
 `/healthz`, uid 1000, proxy headers off) and the Trivy scan, which fails on
 HIGH or CRITICAL vulnerabilities that have a fix.
 
+### Helm chart
+
+The `podiumd-admin` chart in [charts/podiumd-admin/](charts/podiumd-admin/)
+installs one Admin Tool Instance (design D8); [docs/install.md](docs/install.md)
+describes an installation. The application settings live under `settings` in
+`values.yaml`; `values.schema.json` refuses unknown or missing settings. Check
+the chart the way CI does with `.github/scripts/check.sh chart`: `helm lint`,
+the helm-unittest tests in `charts/podiumd-admin/tests/`, and `helm template`
+validated with kubeconform for every Kubernetes version in
+`charts/podiumd-admin/tests/kubernetes-versions`. The tools run as the pinned
+images in `.github/tools/`, so only Docker is needed.
+
 ### Pre-commit hooks
 
 The hooks in [.pre-commit-config.yaml](.pre-commit-config.yaml) run ruff,
@@ -179,6 +197,7 @@ pull requests and on `main`; run them locally before you push.
 | Backend  | `uv run ruff check .`, `uv run ruff format --check .`, `uv run mypy`, `uv run lint-imports`, `uv run pytest`, coverage gate, pip-audit                                                                                  |
 | Frontend | `npm run lint`, `npm run format:check`, `npm run typecheck`, `npm run test:coverage`, `npm audit`                                                                                                                       |
 | Image    | hadolint, `check-dockerfile-versions.sh`, `docker build`, `image-smoke-test.sh`, `image-scan.sh` (Trivy): `.github/scripts/check.sh image`                                                                              |
+| Chart    | `helm lint`, helm-unittest, `helm template` validated with kubeconform for every supported Kubernetes version: `.github/scripts/check.sh chart`                                                                         |
 | Hygiene  | `uv run --project backend --locked pre-commit run --all-files`, gitleaks over the full history, actionlint, hadolint, the path gate tests, the Dockerfile version check tests, the agent setup tests (`.claude/tests/`) |
 
 CodeQL ([.github/workflows/codeql.yml](.github/workflows/codeql.yml)) analyses
@@ -189,7 +208,7 @@ weekly. All GitHub Actions are pinned to commit SHAs.
 On pull requests the checks are gated by path: a job or CodeQL language only
 runs when the PR touches its area, as decided by
 [.github/scripts/changed-areas.sh](.github/scripts/changed-areas.sh). `hygiene`
-always runs. A gated check still reports, as skipped (`backend`, `frontend`, `image`) or
+always runs. A gated check still reports, as skipped (`backend`, `frontend`, `image`, `chart`) or
 as a quick pass (CodeQL), so the required checks on `main` never wait. Pushes to
 `main`, the weekly CodeQL run and manual runs check everything.
 
@@ -198,6 +217,7 @@ as a quick pass (CodeQL), so the required checks on `main` never wait. Pushes to
 | `backend`                      | `backend/`, `.gitignore`, `ci.yml`                                                                                                  |
 | `frontend`                     | `frontend/`, `e2e/`, `.nvmrc`, `.prettierrc.json`, `.prettierignore`, `.editorconfig`, `.gitignore`, `ci.yml`                       |
 | `image`                        | `backend/`, `frontend/`, `Dockerfile`, `.dockerignore`, `.nvmrc`, `.github/tools/trivy/`, the image scripts, `ci.yml`               |
+| `chart`                        | `charts/`, `.github/tools/helm-unittest/`, `.github/tools/kubeconform/`, `.github/scripts/chart-check.sh`, `ci.yml`                 |
 | CodeQL (python)                | `backend/`, any `*.py` or `*.pyi` file, `codeql.yml`                                                                                |
 | CodeQL (javascript-typescript) | `frontend/`, `e2e/`, any JavaScript, TypeScript or HTML file (CodeQL scans the whole repository, `.claude/` included), `codeql.yml` |
 | `hygiene`                      | always                                                                                                                              |

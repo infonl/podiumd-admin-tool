@@ -16,18 +16,19 @@ concurrency:
 # Tool versions are not set here: uv comes from backend/pyproject.toml
 # ([tool.uv] required-version), Python from backend/.python-version, Node from
 # .nvmrc, pre-commit from backend/uv.lock and the hook tools from
-# .pre-commit-config.yaml. Local development reads the same files.
+# .pre-commit-config.yaml, Trivy, Helm, helm-unittest and kubeconform from the
+# images pinned in .github/tools/. Local development reads the same files.
 env:
   FORCE_COLOR: "1"
 
-# Path gate. On pull requests, `backend`, `frontend` and `image` only run when
+# Path gate. On pull requests, `backend`, `frontend`, `image` and `chart` only run when
 # the PR touches their area; `changes` decides that with .github/scripts/changed-areas.sh,
 # which also documents the area mapping. Push to main and workflow_dispatch
 # always run everything, and `hygiene` runs on every event because gitleaks,
 # actionlint and pre-commit cover all files.
 #
-# `on.pull_request.paths` is deliberately not used: backend, frontend, image
-# and hygiene are required status checks on main, and a workflow that does not start
+# `on.pull_request.paths` is deliberately not used: backend, frontend, image,
+# chart and hygiene are required status checks on main, and a workflow that does not start
 # never reports them, so the PR waits on "Expected" forever. A job skipped by a
 # job-level `if:` reports as skipped, which satisfies a required check.
 #
@@ -42,6 +43,7 @@ jobs:
       backend: ${{ steps.areas.outputs.backend }}
       frontend: ${{ steps.areas.outputs.frontend }}
       image: ${{ steps.areas.outputs.image }}
+      chart: ${{ steps.areas.outputs.chart }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -206,6 +208,31 @@ jobs:
       # The Trivy version is the FROM in .github/tools/trivy/Dockerfile.
       - name: Trivy (fails on fixable HIGH or CRITICAL vulnerabilities)
         run: .github/scripts/image-scan.sh podiumd-admin:ci
+
+  # The Helm chart (task 11.5): helm lint, helm-unittest, and kubeconform on
+  # the rendered templates for every supported Kubernetes version. The same
+  # commands as `.github/scripts/check.sh chart`; change the two together.
+  # Helm, helm-unittest and kubeconform run as the images pinned in
+  # .github/tools/helm-unittest/ and .github/tools/kubeconform/.
+  chart:
+    name: chart
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.chart != 'false' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: helm lint
+        run: .github/scripts/chart-check.sh lint
+
+      - name: helm-unittest
+        run: .github/scripts/chart-check.sh unittest
+
+      - name: kubeconform (every supported Kubernetes version)
+        run: .github/scripts/chart-check.sh kubeconform
 
   hygiene:
     name: hygiene
