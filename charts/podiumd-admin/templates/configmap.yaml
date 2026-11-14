@@ -1,0 +1,32 @@
+{{- /*
+The application settings that are not secret, as PODIUMD_ADMIN_* environment
+variables (backend/src/podiumd_admin/config.py). The secret settings are
+references to existing Secrets, set in deployment.yaml. Optional settings are
+left out when empty, so the Admin Tool uses its default.
+*/ -}}
+{{- $settings := .Values.settings -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "podiumd-admin.fullname" . }}
+  labels:
+    {{- include "podiumd-admin.labels" . | nindent 4 }}
+data:
+  PODIUMD_ADMIN_ENVIRONMENT_MUNICIPALITY: {{ $settings.environment.municipality | quote }}
+  PODIUMD_ADMIN_ENVIRONMENT_STAGE: {{ $settings.environment.stage | quote }}
+  {{- with $settings.environment.label }}
+  PODIUMD_ADMIN_ENVIRONMENT_LABEL: {{ . | quote }}
+  {{- end }}
+  PODIUMD_ADMIN_PUBLIC_HOSTNAME: {{ $settings.publicHostname | quote }}
+  PODIUMD_ADMIN_OIDC_ISSUER: {{ $settings.oidc.issuer | quote }}
+  PODIUMD_ADMIN_OIDC_CLIENT_ID: {{ $settings.oidc.clientId | quote }}
+  {{- with $settings.auth.roleClaim }}
+  PODIUMD_ADMIN_AUTH_ROLE_CLAIM: {{ . | quote }}
+  {{- end }}
+  PODIUMD_ADMIN_AUTH_ROLES_VIEWER: {{ $settings.auth.roles.viewer | quote }}
+  PODIUMD_ADMIN_AUTH_ROLES_OPERATOR: {{ $settings.auth.roles.operator | quote }}
+  PODIUMD_ADMIN_SESSION_IDLE_TIMEOUT_MINUTES: {{ $settings.session.idleTimeoutMinutes | quote }}
+  PODIUMD_ADMIN_SESSION_MAX_LIFETIME_MINUTES: {{ $settings.session.maxLifetimeMinutes | quote }}
+  {{- with $settings.trustedProxies }}
+  PODIUMD_ADMIN_TRUSTED_PROXIES: {{ join "," . | quote }}
+  {{- end }}

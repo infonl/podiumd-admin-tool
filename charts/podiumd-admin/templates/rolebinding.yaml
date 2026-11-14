@@ -1,0 +1,14 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "podiumd-admin.fullname" . }}
+  labels:
+    {{- include "podiumd-admin.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "podiumd-admin.fullname" . }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "podiumd-admin.serviceAccountName" . }}
+    namespace: {{ .Release.Namespace }}

@@ -1,0 +1,639 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Values of the podiumd-admin chart",
+  "description": "The application settings live under `settings`, which is strict. The other values are common Kubernetes configuration with PodiumD's names; keys the chart does not define are allowed outside `settings` (issue #38, design D8).",
+  "type": "object",
+  "required": ["settings"],
+  "properties": {
+    "global": {
+      "type": "object",
+      "description": "Values shared with a parent chart when this chart is a subchart (ADR 0006).",
+      "properties": {
+        "imageRegistry": {
+          "type": "string",
+          "description": "A registry that replaces image.registry, e.g. a mirror.",
+          "default": ""
+        }
+      }
+    },
+    "nameOverride": {
+      "type": "string",
+      "description": "Overrides the chart name in resource names.",
+      "maxLength": 63,
+      "pattern": "^([a-z0-9]([-a-z0-9]*[a-z0-9])?)?$",
+      "default": ""
+    },
+    "fullnameOverride": {
+      "type": "string",
+      "description": "Overrides the full resource name.",
+      "maxLength": 52,
+      "pattern": "^([a-z0-9]([-a-z0-9]*[a-z0-9])?)?$",
+      "default": ""
+    },
+    "image": {
+      "type": "object",
+      "description": "The Admin Tool image.",
+      "required": ["repository", "tag", "pullPolicy"],
+      "properties": {
+        "registry": {
+          "type": "string",
+          "description": "The image registry; global.imageRegistry replaces it when set.",
+          "default": "ghcr.io"
+        },
+        "repository": {
+          "type": "string",
+          "description": "The image repository within the registry.",
+          "minLength": 1,
+          "default": "infonl/podiumd-admin-tool"
+        },
+        "tag": {
+          "type": "string",
+          "description": "The image tag, optionally with a digest (<tag>@sha256:<digest>); empty uses the chart's appVersion.",
+          "pattern": "^([A-Za-z0-9_][A-Za-z0-9_.-]{0,127}(@sha256:[a-f0-9]{64})?)?$",
+          "default": ""
+        },
+        "pullPolicy": {
+          "type": "string",
+          "description": "The image pull policy.",
+          "enum": ["Always", "IfNotPresent", "Never"],
+          "default": "IfNotPresent"
+        }
+      }
+    },
+    "imagePullSecrets": {
+      "type": "array",
+      "description": "Secrets for pulling the image, as Kubernetes LocalObjectReference entries.",
+      "items": {
+        "type": "object",
+        "required": ["name"]
+      }
+    },
+    "replicaCount": {
+      "type": "integer",
+      "description": "The number of Admin Tool pods: 1, or 0 to stop it. Never more than one (ADR 0010).",
+      "enum": [0, 1],
+      "default": 1
+    },
+    "settings": {
+      "type": "object",
+      "description": "The application settings: each PODIUMD_ADMIN_* environment variable of the Admin Tool (backend/src/podiumd_admin/config.py), named and typed. Strict: an unknown key fails, and secrets are only references to existing Secrets (issue #38).",
+      "additionalProperties": false,
+      "required": [
+        "environment",
+        "publicHostname",
+        "oidc",
+        "auth",
+        "database",
+        "session",
+        "trustedProxies"
+      ],
+      "properties": {
+        "environment": {
+          "type": "object",
+          "description": "The Environment this Admin Tool Instance belongs to (design D5).",
+          "additionalProperties": false,
+          "required": ["municipality", "stage"],
+          "properties": {
+            "municipality": {
+              "type": "string",
+              "description": "Required. The Municipality, e.g. Onsdorp. (PODIUMD_ADMIN_ENVIRONMENT_MUNICIPALITY)",
+              "minLength": 1,
+              "maxLength": 100,
+              "pattern": "\\S"
+            },
+            "stage": {
+              "type": "string",
+              "description": "Required. The stage of the Environment. (PODIUMD_ADMIN_ENVIRONMENT_STAGE)",
+              "enum": ["test", "accp", "prod"]
+            },
+            "label": {
+              "type": "string",
+              "description": "An optional label shown next to the Municipality and stage. (PODIUMD_ADMIN_ENVIRONMENT_LABEL)",
+              "maxLength": 100,
+              "default": ""
+            }
+          }
+        },
+        "publicHostname": {
+          "type": "string",
+          "description": "Required. The public hostname, with an optional port and without a scheme or path, e.g. admin.podiumd.onsdorp.example. (PODIUMD_ADMIN_PUBLIC_HOSTNAME)",
+          "minLength": 1,
+          "maxLength": 259,
+          "pattern": "^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*(:[0-9]{1,5})?$"
+        },
+        "oidc": {
+          "type": "object",
+          "description": "The Keycloak client of the Admin Tool.",
+          "additionalProperties": false,
+          "required": ["issuer", "clientId", "clientSecret"],
+          "properties": {
+            "issuer": {
+              "type": "string",
+              "description": "Required. The https issuer URL of the Keycloak realm, without user, query or fragment, e.g. https://keycloak.onsdorp.example/realms/podiumd. http only for a loopback host (local development). (PODIUMD_ADMIN_OIDC_ISSUER)",
+              "minLength": 1,
+              "pattern": "^(https://[^\\s/?#@]+|http://(localhost|127\\.0\\.0\\.1|\\[::1\\])(:[0-9]{1,5})?)(/[^\\s?#]*)?$"
+            },
+            "clientId": {
+              "type": "string",
+              "description": "Required. The Keycloak client id, e.g. podiumd-admin. (PODIUMD_ADMIN_OIDC_CLIENT_ID)",
+              "minLength": 1,
+              "maxLength": 255,
+              "pattern": "^\\S+$"
+            },
+            "clientSecret": {
+              "type": "object",
+              "description": "A reference to the existing Secret that holds the Keycloak client secret (PODIUMD_ADMIN_OIDC_CLIENT_SECRET). The chart never creates it.",
+              "additionalProperties": false,
+              "required": ["existingSecret", "key"],
+              "properties": {
+                "existingSecret": {
+                  "type": "string",
+                  "description": "Required. The name of the existing Secret.",
+                  "minLength": 1,
+                  "maxLength": 253,
+                  "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$"
+                },
+                "key": {
+                  "type": "string",
+                  "description": "The key in that Secret.",
+                  "minLength": 1,
+                  "maxLength": 253,
+                  "pattern": "^[-._a-zA-Z0-9]+$",
+                  "default": "client-secret"
+                }
+              }
+            }
+          }
+        },
+        "auth": {
+          "type": "object",
+          "description": "How Keycloak roles map to the Viewer and Operator Roles (design D3).",
+          "additionalProperties": false,
+          "required": ["roleClaim", "roles"],
+          "properties": {
+            "roleClaim": {
+              "type": "string",
+              "description": "The dot-separated token claim that holds the role names; empty uses resource_access.<settings.oidc.clientId>.roles. (PODIUMD_ADMIN_AUTH_ROLE_CLAIM)",
+              "pattern": "^([^.\\s]+(\\.[^.\\s]+)*)?$",
+              "default": ""
+            },
+            "roles": {
+              "type": "object",
+              "description": "The role names that grant the Roles.",
+              "additionalProperties": false,
+              "required": ["viewer", "operator"],
+              "properties": {
+                "viewer": {
+                  "type": "string",
+                  "description": "The role name that grants the Viewer Role. (PODIUMD_ADMIN_AUTH_ROLES_VIEWER)",
+                  "minLength": 1,
+                  "pattern": "^\\S(.*\\S)?$",
+                  "default": "viewer"
+                },
+                "operator": {
+                  "type": "string",
+                  "description": "The role name that grants the Operator Role. (PODIUMD_ADMIN_AUTH_ROLES_OPERATOR)",
+                  "minLength": 1,
+                  "pattern": "^\\S(.*\\S)?$",
+                  "default": "operator"
+                }
+              }
+            }
+          }
+        },
+        "database": {
+          "type": "object",
+          "description": "The Admin Tool's own PostgreSQL database, with an app role and an owner role (design D4, D8).",
+          "additionalProperties": false,
+          "required": ["app", "owner"],
+          "properties": {
+            "app": {
+              "type": "object",
+              "description": "A reference to the existing Secret that holds the database URL of the app role, used by the running Admin Tool Instance (PODIUMD_ADMIN_DATABASE_APP_URL). The chart never creates it.",
+              "additionalProperties": false,
+              "required": ["existingSecret", "key"],
+              "properties": {
+                "existingSecret": {
+                  "type": "string",
+                  "description": "Required. The name of the existing Secret.",
+                  "minLength": 1,
+                  "maxLength": 253,
+                  "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$"
+                },
+                "key": {
+                  "type": "string",
+                  "description": "The key in that Secret.",
+                  "minLength": 1,
+                  "maxLength": 253,
+                  "pattern": "^[-._a-zA-Z0-9]+$",
+                  "default": "url"
+                }
+              }
+            },
+            "owner": {
+              "type": "object",
+              "description": "A reference to the existing Secret that holds the database URL of the owner role, used only by the migration Job (PODIUMD_ADMIN_DATABASE_OWNER_URL). The chart never creates it.",
+              "additionalProperties": false,
+              "required": ["existingSecret", "key"],
+              "properties": {
+                "existingSecret": {
+                  "type": "string",
+                  "description": "Required. The name of the existing Secret.",
+                  "minLength": 1,
+                  "maxLength": 253,
+                  "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$"
+                },
+                "key": {
+                  "type": "string",
+                  "description": "The key in that Secret.",
+                  "minLength": 1,
+                  "maxLength": 253,
+                  "pattern": "^[-._a-zA-Z0-9]+$",
+                  "default": "url"
+                }
+              }
+            }
+          }
+        },
+        "session": {
+          "type": "object",
+          "description": "Sessions (design D2).",
+          "additionalProperties": false,
+          "required": ["encryptionKeys", "idleTimeoutMinutes", "maxLifetimeMinutes"],
+          "properties": {
+            "encryptionKeys": {
+              "type": "object",
+              "description": "A reference to the existing Secret that holds the session encryption keys: comma-separated Fernet keys, the primary key first (PODIUMD_ADMIN_SESSION_ENCRYPTION_KEYS). The chart never creates it.",
+              "additionalProperties": false,
+              "required": ["existingSecret", "key"],
+              "properties": {
+                "existingSecret": {
+                  "type": "string",
+                  "description": "Required. The name of the existing Secret.",
+                  "minLength": 1,
+                  "maxLength": 253,
+                  "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$"
+                },
+                "key": {
+                  "type": "string",
+                  "description": "The key in that Secret.",
+                  "minLength": 1,
+                  "maxLength": 253,
+                  "pattern": "^[-._a-zA-Z0-9]+$",
+                  "default": "encryption-keys"
+                }
+              }
+            },
+            "idleTimeoutMinutes": {
+              "type": "integer",
+              "description": "Minutes a session may be idle before it ends. (PODIUMD_ADMIN_SESSION_IDLE_TIMEOUT_MINUTES)",
+              "default": 30,
+              "minimum": 1,
+              "maximum": 720
+            },
+            "maxLifetimeMinutes": {
+              "type": "integer",
+              "description": "Minutes a session may last at most, 720 (12 hours) at most. (PODIUMD_ADMIN_SESSION_MAX_LIFETIME_MINUTES)",
+              "default": 480,
+              "minimum": 1,
+              "maximum": 720
+            }
+          }
+        },
+        "trustedProxies": {
+          "type": "array",
+          "description": "Addresses or CIDR ranges of the proxies whose X-Forwarded-For header is trusted. Empty trusts no proxy; a /0 range is refused. (PODIUMD_ADMIN_TRUSTED_PROXIES)",
+          "default": [],
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "description": "An IPv4 or IPv6 address or CIDR range, e.g. 10.244.0.0/16.",
+            "pattern": "^[0-9a-fA-F:.]+(/[0-9]{1,3})?$",
+            "not": {
+              "pattern": "/0+$"
+            }
+          }
+        }
+      }
+    },
+    "extraEnvVars": {
+      "type": "array",
+      "description": "Extra environment variables of the Admin Tool and migration containers, as Kubernetes EnvVar entries. A name starting with PODIUMD_ADMIN_ is refused: application settings belong in `settings`.",
+      "default": [],
+      "items": {
+        "type": "object",
+        "required": ["name"],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "The variable name; never PODIUMD_ADMIN_*.",
+            "minLength": 1,
+            "not": {
+              "pattern": "^PODIUMD_ADMIN_"
+            }
+          }
+        }
+      }
+    },
+    "extraVolumes": {
+      "type": "array",
+      "description": "Extra volumes of the Admin Tool pod and the migration Job, as Kubernetes Volume entries.",
+      "items": {
+        "type": "object",
+        "required": ["name"]
+      }
+    },
+    "extraVolumeMounts": {
+      "type": "array",
+      "description": "Extra volume mounts of the Admin Tool and migration containers, as Kubernetes VolumeMount entries.",
+      "items": {
+        "type": "object",
+        "required": ["name", "mountPath"]
+      }
+    },
+    "serviceAccount": {
+      "type": "object",
+      "description": "The ServiceAccount of the Admin Tool pod.",
+      "properties": {
+        "create": {
+          "type": "boolean",
+          "description": "Create the ServiceAccount; otherwise an existing one is used.",
+          "default": true
+        },
+        "automountServiceAccountToken": {
+          "type": "boolean",
+          "description": "Mount the ServiceAccount token into the Admin Tool pod.",
+          "default": false
+        },
+        "annotations": {
+          "type": "object",
+          "description": "Annotations of the ServiceAccount.",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "name": {
+          "type": "string",
+          "description": "The ServiceAccount name; empty uses the full name.",
+          "maxLength": 253,
+          "pattern": "^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*)?$",
+          "default": ""
+        }
+      }
+    },
+    "podLabels": {
+      "type": "object",
+      "description": "Labels added to the pods.",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "podAnnotations": {
+      "type": "object",
+      "description": "Annotations added to the pods.",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "podSecurityContext": {
+      "type": "object",
+      "description": "A Kubernetes PodSecurityContext. Never root (ADR 0007): runAsNonRoot is always true.",
+      "properties": {
+        "runAsNonRoot": {
+          "const": true,
+          "description": "Always true (ADR 0007)."
+        },
+        "runAsUser": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Never 0 (root)."
+        },
+        "runAsGroup": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Never 0 (root)."
+        }
+      }
+    },
+    "securityContext": {
+      "type": "object",
+      "description": "A Kubernetes SecurityContext of the containers. The hardening fields cannot be weakened (ADR 0007).",
+      "properties": {
+        "runAsNonRoot": {
+          "const": true,
+          "description": "Always true (ADR 0007)."
+        },
+        "runAsUser": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Never 0 (root)."
+        },
+        "runAsGroup": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Never 0 (root)."
+        },
+        "readOnlyRootFilesystem": {
+          "const": true,
+          "description": "Always true (ADR 0007)."
+        },
+        "allowPrivilegeEscalation": {
+          "const": false,
+          "description": "Always false (ADR 0007)."
+        },
+        "privileged": {
+          "const": false,
+          "description": "Always false (ADR 0007)."
+        },
+        "capabilities": {
+          "type": "object",
+          "description": "All capabilities are dropped and none are added (ADR 0007).",
+          "properties": {
+            "drop": {
+              "type": "array",
+              "contains": {
+                "const": "ALL"
+              }
+            },
+            "add": {
+              "type": "array",
+              "maxItems": 0
+            }
+          }
+        }
+      }
+    },
+    "resources": {
+      "type": "object",
+      "description": "Kubernetes ResourceRequirements of the Admin Tool and migration containers."
+    },
+    "nodeSelector": {
+      "type": "object",
+      "description": "Node labels the pods must match.",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "tolerations": {
+      "type": "array",
+      "description": "Kubernetes Toleration entries of the pods.",
+      "items": {
+        "type": "object"
+      }
+    },
+    "affinity": {
+      "type": "object",
+      "description": "A Kubernetes Affinity of the pods."
+    },
+    "topologySpreadConstraints": {
+      "type": "array",
+      "description": "Kubernetes TopologySpreadConstraint entries of the Admin Tool pod.",
+      "items": {
+        "type": "object"
+      }
+    },
+    "livenessProbe": {
+      "type": "object",
+      "description": "A Kubernetes Probe: the liveness probe (/healthz)."
+    },
+    "readinessProbe": {
+      "type": "object",
+      "description": "A Kubernetes Probe: the readiness probe (/readyz)."
+    },
+    "pdb": {
+      "type": "object",
+      "description": "A PodDisruptionBudget, off by default.",
+      "properties": {
+        "create": {
+          "type": "boolean",
+          "description": "Create a PodDisruptionBudget.",
+          "default": false
+        },
+        "minAvailable": {
+          "type": ["integer", "string", "null"],
+          "description": "The minimum available pods; empty leaves it out."
+        },
+        "maxUnavailable": {
+          "type": ["integer", "string", "null"],
+          "description": "The maximum unavailable pods; empty leaves it out."
+        }
+      }
+    },
+    "migrations": {
+      "type": "object",
+      "description": "The migration hook Job (design D8).",
+      "properties": {
+        "backoffLimit": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Retries before the Job, and with it the install or upgrade, fails.",
+          "default": 2
+        },
+        "activeDeadlineSeconds": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Seconds the Job may run at most.",
+          "default": 600
+        }
+      }
+    },
+    "service": {
+      "type": "object",
+      "description": "The Service, always created.",
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["ClusterIP", "NodePort", "LoadBalancer"],
+          "description": "The Service type.",
+          "default": "ClusterIP"
+        },
+        "port": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535,
+          "description": "The port of the Service.",
+          "default": 80
+        },
+        "annotations": {
+          "type": "object",
+          "description": "Annotations of the Service.",
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "ingress": {
+      "type": "object",
+      "description": "An optional Ingress for settings.publicHostname, off by default.",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "Create the Ingress.",
+          "default": false
+        },
+        "className": {
+          "type": "string",
+          "description": "The IngressClass; empty uses the cluster default.",
+          "default": ""
+        },
+        "annotations": {
+          "type": "object",
+          "description": "Annotations of the Ingress.",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "tls": {
+          "type": "array",
+          "description": "Kubernetes IngressTLS entries; an entry without hosts gets the public hostname.",
+          "items": {
+            "type": "object"
+          }
+        }
+      }
+    },
+    "httpRoute": {
+      "type": "object",
+      "description": "An optional Gateway API HTTPRoute for settings.publicHostname, off by default.",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "Create the HTTPRoute.",
+          "default": false
+        },
+        "annotations": {
+          "type": "object",
+          "description": "Annotations of the HTTPRoute.",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "parentRefs": {
+          "type": "array",
+          "description": "Gateway API ParentReference entries. At least one when enabled.",
+          "items": {
+            "type": "object",
+            "required": ["name"]
+          }
+        }
+      },
+      "if": {
+        "properties": {
+          "enabled": {
+            "const": true
+          }
+        },
+        "required": ["enabled"]
+      },
+      "then": {
+        "required": ["parentRefs"],
+        "properties": {
+          "parentRefs": {
+            "minItems": 1
+          }
+        }
+      }
+    }
+  }
+}

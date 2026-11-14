@@ -1,0 +1,42 @@
+{{- /*
+Off by default: PodiumD Environments route to their apps with HTTPRoutes
+created on the deploy side (docs/install.md, design D8).
+*/ -}}
+{{- if .Values.ingress.enabled -}}
+{{- $host := include "podiumd-admin.host" . -}}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "podiumd-admin.fullname" . }}
+  labels:
+    {{- include "podiumd-admin.labels" . | nindent 4 }}
+  {{- with .Values.ingress.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- with .Values.ingress.className }}
+  ingressClassName: {{ . | quote }}
+  {{- end }}
+  {{- with .Values.ingress.tls }}
+  tls:
+    {{- range . }}
+    - hosts:
+        {{- toYaml (default (list $host) .hosts) | nindent 8 }}
+      {{- with .secretName }}
+      secretName: {{ . | quote }}
+      {{- end }}
+    {{- end }}
+  {{- end }}
+  rules:
+    - host: {{ $host | quote }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "podiumd-admin.fullname" . }}
+                port:
+                  name: http
+{{- end }}

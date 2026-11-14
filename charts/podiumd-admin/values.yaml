@@ -1,0 +1,268 @@
+# Values of the podiumd-admin chart (design D8, issue #38).
+#
+# Two kinds of values, both validated by values.schema.json:
+#
+# - `settings` holds every application setting: each PODIUMD_ADMIN_*
+#   environment variable the Admin Tool reads (backend/src/podiumd_admin/config.py)
+#   has one named, typed value here. `settings` is strict: an unknown or
+#   misspelled key fails `helm install` and `helm template`, and the required
+#   settings must be set. Secret values are never set here; the chart only
+#   references existing Secrets (existingSecret + key) and never creates one.
+# - Everything else is common Kubernetes configuration, with the names PodiumD
+#   uses (image, resources, probes, service, ingress, ...). Keys the chart does
+#   not define are allowed outside `settings`, and extraEnvVars, extraVolumes
+#   and extraVolumeMounts pass on what a pod needs beyond the settings. An
+#   extraEnvVars entry cannot set a PODIUMD_ADMIN_* variable, so `settings`
+#   cannot be bypassed.
+#
+# Values marked "Required" have no default; docs/install.md walks through them.
+
+global:
+  # -- A registry that replaces image.registry, e.g. a mirror. Shared with a
+  # parent chart when this chart is a subchart (ADR 0006).
+  imageRegistry: ""
+
+# -- Overrides the chart name in resource names.
+nameOverride: ""
+# -- Overrides the full resource name (by default "<release>-podiumd-admin",
+# or the release name when it already contains the chart name).
+fullnameOverride: ""
+
+image:
+  # -- The image registry; global.imageRegistry replaces it when set.
+  registry: ghcr.io
+  # -- The image repository within the registry.
+  repository: infonl/podiumd-admin-tool
+  # -- The image tag; empty uses the chart's appVersion. Pin a digest with
+  # "<tag>@sha256:<digest>".
+  tag: ""
+  # -- The image pull policy.
+  pullPolicy: IfNotPresent
+
+# -- Secrets for pulling the image from a private registry, as
+# `- name: <secret>` entries.
+imagePullSecrets: []
+
+# -- The number of Admin Tool pods: 1, or 0 to stop it. One replica only
+# (ADR 0010), with the Recreate strategy, so two versions never run against
+# the same database schema.
+replicaCount: 1
+
+# The application settings, passed to the container as PODIUMD_ADMIN_*
+# environment variables. Strict: see the top of this file.
+settings:
+  # The Environment this Admin Tool Instance belongs to (design D5).
+  environment:
+    # -- Required. The Municipality, e.g. Onsdorp. (ENVIRONMENT_MUNICIPALITY)
+    # municipality: Onsdorp
+    # -- Required. The stage: test, accp or prod. (ENVIRONMENT_STAGE)
+    # stage: test
+    # -- An optional label shown next to the Municipality and stage.
+    # (ENVIRONMENT_LABEL)
+    label: ""
+
+  # -- Required. The public hostname of the Admin Tool, with an optional port
+  # and without a scheme or path, e.g. admin.podiumd.onsdorp.example. Used for
+  # the OIDC redirect URIs, the cookies, and the host of the optional Ingress
+  # and HTTPRoute. (PUBLIC_HOSTNAME)
+  # publicHostname: admin.podiumd.onsdorp.example
+
+  # The Keycloak client of the Admin Tool (docs/install.md, "Keycloak client").
+  oidc:
+    # -- Required. The issuer URL of the Keycloak realm, e.g.
+    # https://keycloak.onsdorp.example/realms/podiumd. (OIDC_ISSUER)
+    # issuer: https://keycloak.onsdorp.example/realms/podiumd
+    # -- Required. The client id, e.g. podiumd-admin. (OIDC_CLIENT_ID)
+    # clientId: podiumd-admin
+    # The client secret. (OIDC_CLIENT_SECRET)
+    clientSecret:
+      # -- Required. The existing Secret that holds the client secret.
+      # existingSecret: podiumd-admin-oidc
+      # -- The key of the client secret in that Secret.
+      key: client-secret
+
+  # How Keycloak roles map to the Viewer and Operator Roles (design D3).
+  auth:
+    # -- The dot-separated token claim that holds the role names. Empty uses
+    # the client roles of the configured client:
+    # resource_access.<settings.oidc.clientId>.roles. (AUTH_ROLE_CLAIM)
+    roleClaim: ""
+    roles:
+      # -- The role name that grants the Viewer Role. (AUTH_ROLES_VIEWER)
+      viewer: viewer
+      # -- The role name that grants the Operator Role. (AUTH_ROLES_OPERATOR)
+      operator: operator
+
+  # The Admin Tool's own PostgreSQL database, with two roles (design D4, D8).
+  database:
+    # The app role, used by the running Admin Tool Instance. (DATABASE_APP_URL)
+    app:
+      # -- Required. The existing Secret that holds the app role's database
+      # URL, postgresql://podiumd_admin_app:<password>@<host>:5432/<database>.
+      # existingSecret: podiumd-admin-db-app
+      # -- The key of the URL in that Secret.
+      key: url
+    # The owner role, used only by the migration Job. (DATABASE_OWNER_URL)
+    owner:
+      # -- Required. The existing Secret that holds the owner role's database
+      # URL, postgresql://podiumd_admin_owner:<password>@<host>:5432/<database>.
+      # existingSecret: podiumd-admin-db-owner
+      # -- The key of the URL in that Secret.
+      key: url
+
+  session:
+    # The keys that encrypt stored tokens. (SESSION_ENCRYPTION_KEYS)
+    encryptionKeys:
+      # -- Required. The existing Secret that holds the session encryption
+      # keys: comma-separated Fernet keys, the primary key first.
+      # existingSecret: podiumd-admin-session
+      # -- The key of the encryption keys in that Secret.
+      key: encryption-keys
+    # -- Minutes a session may be idle before it ends.
+    # (SESSION_IDLE_TIMEOUT_MINUTES)
+    idleTimeoutMinutes: 30
+    # -- Minutes a session may last at most; at most 720 (12 hours).
+    # (SESSION_MAX_LIFETIME_MINUTES)
+    maxLifetimeMinutes: 480
+
+  # -- Addresses or CIDR ranges of the proxies whose X-Forwarded-For header is
+  # trusted, e.g. the ingress controller's pod network. Empty trusts no proxy.
+  # (TRUSTED_PROXIES)
+  trustedProxies: []
+
+# -- Extra environment variables of the Admin Tool container, as Kubernetes
+# EnvVar entries. A name starting with PODIUMD_ADMIN_ is rejected: application
+# settings belong in `settings`.
+extraEnvVars: []
+# -- Extra volumes of the Admin Tool pod, as Kubernetes Volume entries.
+extraVolumes: []
+# -- Extra volume mounts of the Admin Tool container, as Kubernetes
+# VolumeMount entries.
+extraVolumeMounts: []
+
+serviceAccount:
+  # -- Create the ServiceAccount; otherwise an existing one is used.
+  create: true
+  # -- Mount the ServiceAccount token into the Admin Tool pod. Off: in this
+  # version the Admin Tool does not call the Kubernetes API.
+  automountServiceAccountToken: false
+  # -- Annotations of the ServiceAccount.
+  annotations: {}
+  # -- The ServiceAccount name; empty uses the full name.
+  name: ""
+
+# -- Labels added to the pods.
+podLabels: {}
+# -- Annotations added to the pods.
+podAnnotations: {}
+
+# -- The pod security context of the Admin Tool pod and the migration Job.
+# runAsNonRoot is always true, and the schema refuses user or group 0
+# (ADR 0007).
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  runAsGroup: 1000
+  fsGroup: 1000
+  seccompProfile:
+    type: RuntimeDefault
+
+# -- The security context of the Admin Tool and migration containers. The
+# hardening (ADR 0007) is always applied, and the schema refuses values that
+# weaken it: non-root, a read-only root filesystem, no privilege escalation,
+# not privileged, and all capabilities dropped (none added).
+securityContext:
+  runAsNonRoot: true
+  readOnlyRootFilesystem: true
+  allowPrivilegeEscalation: false
+  privileged: false
+  capabilities:
+    drop:
+      - ALL
+
+# -- Resources of the Admin Tool container and of the migration Job.
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    memory: 512Mi
+
+# -- Node labels the pods must match.
+nodeSelector: {}
+# -- Tolerations of the pods.
+tolerations: []
+# -- Affinity of the pods.
+affinity: {}
+# -- Topology spread constraints of the pods.
+topologySpreadConstraints: []
+
+# -- The liveness probe: /healthz reports whether the process runs.
+livenessProbe:
+  httpGet:
+    path: /healthz
+    port: http
+  initialDelaySeconds: 5
+  periodSeconds: 10
+  timeoutSeconds: 2
+  failureThreshold: 3
+# -- The readiness probe: /readyz reports whether the database is reachable.
+readinessProbe:
+  httpGet:
+    path: /readyz
+    port: http
+  initialDelaySeconds: 5
+  periodSeconds: 10
+  timeoutSeconds: 2
+  failureThreshold: 3
+
+# A PodDisruptionBudget, off by default. With one replica, use
+# maxUnavailable: 1 (as PodiumD does), so nodes can still be drained.
+pdb:
+  # -- Create a PodDisruptionBudget.
+  create: false
+  # -- The minimum available pods; empty leaves it out.
+  minAvailable: ""
+  # -- The maximum unavailable pods; empty leaves it out.
+  maxUnavailable: 1
+
+# The migration Job, a pre-install and pre-upgrade hook that runs
+# `alembic upgrade head` with the owner role (design D8).
+migrations:
+  # -- Retries before the Job, and with it the install or upgrade, fails.
+  backoffLimit: 2
+  # -- Seconds the Job may run at most.
+  activeDeadlineSeconds: 600
+
+service:
+  # -- The Service type.
+  type: ClusterIP
+  # -- The port of the Service.
+  port: 80
+  # -- Annotations of the Service.
+  annotations: {}
+
+# An Ingress, off by default: PodiumD Environments route to apps with
+# HTTPRoutes created on the deploy side (docs/install.md). Its host is
+# settings.publicHostname.
+ingress:
+  # -- Create an Ingress.
+  enabled: false
+  # -- The IngressClass; empty uses the cluster default.
+  className: ""
+  # -- Annotations of the Ingress, e.g. for cert-manager.
+  annotations: {}
+  # -- Kubernetes IngressTLS entries; an entry without hosts gets the public
+  # hostname.
+  tls: []
+
+# An HTTPRoute (Gateway API), off by default, for clusters that do not create
+# the route on the deploy side. Its hostname is settings.publicHostname.
+httpRoute:
+  # -- Create an HTTPRoute.
+  enabled: false
+  # -- Annotations of the HTTPRoute.
+  annotations: {}
+  # -- The Gateways the HTTPRoute attaches to, as Gateway API ParentReference
+  # entries. Required when enabled.
+  parentRefs: []

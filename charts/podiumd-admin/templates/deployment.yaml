@@ -1,0 +1,104 @@
+{{- $settings := .Values.settings -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "podiumd-admin.fullname" . }}
+  labels:
+    {{- include "podiumd-admin.labels" . | nindent 4 }}
+spec:
+  # One replica at most (ADR 0010), replaced with Recreate, so two versions
+  # never run against the same database schema.
+  replicas: {{ .Values.replicaCount }}
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "podiumd-admin.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "podiumd-admin.labels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      annotations:
+        # A changed setting restarts the pod (the ConfigMap is not watched).
+        # A new chart version already does, through the helm.sh/chart label.
+        checksum/settings: {{ .Values.settings | toJson | sha256sum }}
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      serviceAccountName: {{ include "podiumd-admin.serviceAccountName" . }}
+      automountServiceAccountToken: {{ .Values.serviceAccount.automountServiceAccountToken }}
+      # No *_SERVICE_HOST/*_PORT variables from the Services in the namespace.
+      enableServiceLinks: false
+      securityContext:
+        {{- include "podiumd-admin.podSecurityContext" . | nindent 8 }}
+      {{- with include "podiumd-admin.podScheduling" . | trim }}
+      {{- . | nindent 6 }}
+      {{- end }}
+      {{- with .Values.topologySpreadConstraints }}
+      topologySpreadConstraints:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: podiumd-admin
+          image: {{ include "podiumd-admin.image" . | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          # The image's own command (uvicorn on port 8000) is kept.
+          ports:
+            - name: http
+              containerPort: 8000
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: {{ include "podiumd-admin.fullname" . }}
+          env:
+            # The app role's credentials; the owner role's are only given to
+            # the migration Job (design D8).
+            - name: PODIUMD_ADMIN_DATABASE_APP_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $settings.database.app.existingSecret | quote }}
+                  key: {{ $settings.database.app.key | quote }}
+            - name: PODIUMD_ADMIN_OIDC_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $settings.oidc.clientSecret.existingSecret | quote }}
+                  key: {{ $settings.oidc.clientSecret.key | quote }}
+            - name: PODIUMD_ADMIN_SESSION_ENCRYPTION_KEYS
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $settings.session.encryptionKeys.existingSecret | quote }}
+                  key: {{ $settings.session.encryptionKeys.key | quote }}
+            {{- with .Values.extraEnvVars }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          {{- with .Values.livenessProbe }}
+          livenessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.readinessProbe }}
+          readinessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          securityContext:
+            {{- include "podiumd-admin.securityContext" . | nindent 12 }}
+          volumeMounts:
+            # The only writable path: the root filesystem is read-only.
+            - name: tmp
+              mountPath: /tmp
+            {{- with .Values.extraVolumeMounts }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        {{- with .Values.extraVolumes }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}

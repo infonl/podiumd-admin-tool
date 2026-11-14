@@ -1,0 +1,26 @@
+# No cluster-scoped RBAC anywhere in the chart (spec "Cluster access limited to
+# the PodiumD namespace", ADR 0011): every template, with every feature on.
+suite: no cluster-scoped resources
+templates:
+  - "*.yaml"
+values:
+  - values/all-features.yaml
+release:
+  name: podiumd-admin
+  namespace: podiumd
+tests:
+  - it: renders no ClusterRole or ClusterRoleBinding
+    asserts:
+      - not: true
+        isKind:
+          of: ClusterRole
+      - not: true
+        isKind:
+          of: ClusterRoleBinding
+
+  - it: binds no ClusterRole
+    template: rolebinding.yaml
+    asserts:
+      - equal:
+          path: roleRef.kind
+          value: Role

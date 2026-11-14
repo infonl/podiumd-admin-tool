@@ -137,11 +137,16 @@ A multi-stage Dockerfile: node build → uv build → `python:3.12-slim` runtime
 
 ### D8. Helm chart
 
-- **Structure** follows the Maykin chart conventions: `fullnameOverride`, `existingSecret` patterns, `extraEnv`, `podSecurityContext`, `values.schema.json`.
-- **Migrations.** A `pre-install,pre-upgrade` hook Job runs `alembic upgrade head` with the owner credentials. The Deployment uses the app credentials.
+- **Structure** follows the Maykin chart conventions: `fullnameOverride`, `existingSecret` patterns, `extraEnvVars`, `podSecurityContext`, `values.schema.json`.
+- **Values (issue #38).**
+  - **Application settings are strict.** Every `PODIUMD_ADMIN_*` setting lives under one `settings` property, the PodiumD/Maykin convention (e.g. `openzaak.settings`): `settings.environment`, `settings.publicHostname`, `settings.oidc`, `settings.auth`, `settings.database`, `settings.session` and `settings.trustedProxies`. Each is named and typed; `settings` has `additionalProperties: false` and enforces the required values, so a misspelled or unknown setting fails `helm install` and `helm template`. Secrets are only `{existingSecret, key}` references.
+  - **Common Kubernetes values** use PodiumD's names and are typed: `image` (`registry`, `repository`, `tag`, `pullPolicy`), `imagePullSecrets`, `fullnameOverride`, `nameOverride`, `replicaCount`, `resources`, `nodeSelector`, `tolerations`, `affinity`, `topologySpreadConstraints`, `podLabels`, `podAnnotations`, `securityContext`, `podSecurityContext`, `serviceAccount`, `pdb`, `livenessProbe`, `readinessProbe`, `service`, `ingress`, `httpRoute` and `global.imageRegistry`. A value that is a Kubernetes object is typed as an object with free contents. The exceptions are `securityContext` and `podSecurityContext`, whose hardening fields (ADR 0007) cannot be weakened, and `replicaCount`, which is 0 or 1 (ADR 0010).
+  - **Other keys are allowed outside `settings`**, including `extraEnvVars`, `extraVolumes` and `extraVolumeMounts`, for what pods need beyond the application settings.
+  - **Safeguard.** The schema refuses an `extraEnvVars` entry whose name starts with `PODIUMD_ADMIN_`, so `settings` cannot be bypassed.
+- **Migrations.** A `pre-install,pre-upgrade` hook Job runs `alembic upgrade head` with the owner credentials. The Deployment uses the app credentials. The Job runs as the namespace's default ServiceAccount without a token, because a pre-install hook runs before the chart's own ServiceAccount exists.
 - **Secrets.** All Secrets are referenced through `existingSecret` values: the Keycloak client secret, the owner and app database credentials, and the session encryption keys. The chart never generates them. Startup refuses known development keys.
 - **Exposure.** A Service is always created. An Ingress is optional and off by default, because PodiumD Environments expose apps through HTTPRoutes created on the deploy side (research). An optional HTTPRoute template exists for clusters that want it.
-- **RBAC skeleton.** A ServiceAccount plus a Role/RoleBinding with `get` on its own ConfigMap only. Changes 2 and 3 extend the rules. A `helm-unittest` test asserts that there is no cluster-scoped RBAC, no `pods/exec`, and no `list`/`watch` on Secrets.
+- **RBAC skeleton.** A ServiceAccount plus a Role/RoleBinding with `get` on its own ConfigMap only. That ConfigMap holds the settings that are not secret; the Deployment reads them as environment variables. Changes 2 and 3 extend the rules. A `helm-unittest` test asserts that there is no cluster-scoped RBAC, no `pods/exec`, and no `list`/`watch` on Secrets.
 
 ### D9. Developer loop and tests
 

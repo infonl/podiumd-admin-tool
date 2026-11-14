@@ -1,0 +1,22 @@
+{{- if .Values.pdb.create -}}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "podiumd-admin.fullname" . }}
+  labels:
+    {{- include "podiumd-admin.labels" . | nindent 4 }}
+spec:
+  {{- if not (kindIs "invalid" .Values.pdb.minAvailable) }}
+  {{- if ne (toString .Values.pdb.minAvailable) "" }}
+  minAvailable: {{ .Values.pdb.minAvailable }}
+  {{- end }}
+  {{- end }}
+  {{- if not (kindIs "invalid" .Values.pdb.maxUnavailable) }}
+  {{- if ne (toString .Values.pdb.maxUnavailable) "" }}
+  maxUnavailable: {{ .Values.pdb.maxUnavailable }}
+  {{- end }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "podiumd-admin.selectorLabels" . | nindent 6 }}
+{{- end }}

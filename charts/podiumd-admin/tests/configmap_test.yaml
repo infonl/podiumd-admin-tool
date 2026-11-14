@@ -1,0 +1,46 @@
+# The non-secret settings as PODIUMD_ADMIN_* environment variables, with the
+# names in backend/src/podiumd_admin/config.py (task 11.2). The exact `data`
+# also shows that no secret and no Secret reference ends up in the ConfigMap.
+suite: configmap
+templates:
+  - configmap.yaml
+values:
+  - values/onsdorp.yaml
+release:
+  name: podiumd-admin
+  namespace: podiumd
+tests:
+  - it: maps the required settings and the defaults
+    asserts:
+      - equal:
+          path: data
+          value:
+            PODIUMD_ADMIN_ENVIRONMENT_MUNICIPALITY: Onsdorp
+            PODIUMD_ADMIN_ENVIRONMENT_STAGE: test
+            PODIUMD_ADMIN_PUBLIC_HOSTNAME: admin.podiumd.onsdorp.example
+            PODIUMD_ADMIN_OIDC_ISSUER: https://keycloak.onsdorp.example/realms/podiumd
+            PODIUMD_ADMIN_OIDC_CLIENT_ID: podiumd-admin
+            PODIUMD_ADMIN_AUTH_ROLES_VIEWER: viewer
+            PODIUMD_ADMIN_AUTH_ROLES_OPERATOR: operator
+            PODIUMD_ADMIN_SESSION_IDLE_TIMEOUT_MINUTES: "30"
+            PODIUMD_ADMIN_SESSION_MAX_LIFETIME_MINUTES: "480"
+
+  - it: maps every optional setting
+    values:
+      - values/all-features.yaml
+    asserts:
+      - equal:
+          path: data
+          value:
+            PODIUMD_ADMIN_ENVIRONMENT_MUNICIPALITY: Onsdorp
+            PODIUMD_ADMIN_ENVIRONMENT_STAGE: accp
+            PODIUMD_ADMIN_ENVIRONMENT_LABEL: Acceptatie 2
+            PODIUMD_ADMIN_PUBLIC_HOSTNAME: admin.podiumd.onsdorp.example:8443
+            PODIUMD_ADMIN_OIDC_ISSUER: https://keycloak.onsdorp.example/realms/podiumd
+            PODIUMD_ADMIN_OIDC_CLIENT_ID: podiumd-admin
+            PODIUMD_ADMIN_AUTH_ROLE_CLAIM: realm_access.roles
+            PODIUMD_ADMIN_AUTH_ROLES_VIEWER: podiumd-admin-viewer
+            PODIUMD_ADMIN_AUTH_ROLES_OPERATOR: podiumd-admin-operator
+            PODIUMD_ADMIN_SESSION_IDLE_TIMEOUT_MINUTES: "15"
+            PODIUMD_ADMIN_SESSION_MAX_LIFETIME_MINUTES: "240"
+            PODIUMD_ADMIN_TRUSTED_PROXIES: 10.244.0.0/16,fd00::/8

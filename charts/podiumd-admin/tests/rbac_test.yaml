@@ -1,0 +1,91 @@
+# Cluster access limited to the PodiumD namespace (task 11.4/11.5, spec
+# "Cluster access limited to the PodiumD namespace", ADR 0003, ADR 0011).
+suite: rbac
+templates:
+  - serviceaccount.yaml
+  - role.yaml
+  - rolebinding.yaml
+values:
+  - values/onsdorp.yaml
+release:
+  name: podiumd-admin
+  namespace: podiumd
+tests:
+  - it: creates a ServiceAccount without an automounted token
+    template: serviceaccount.yaml
+    asserts:
+      - isKind:
+          of: ServiceAccount
+      - equal:
+          path: automountServiceAccountToken
+          value: false
+
+  - it: uses an existing ServiceAccount when asked
+    set:
+      serviceAccount.create: false
+      serviceAccount.name: onsdorp-admin
+    asserts:
+      - hasDocuments:
+          count: 0
+        template: serviceaccount.yaml
+      - equal:
+          path: subjects[0].name
+          value: onsdorp-admin
+        template: rolebinding.yaml
+
+  - it: grants only get on the chart's own ConfigMap
+    template: role.yaml
+    asserts:
+      - isKind:
+          of: Role
+      - equal:
+          path: rules
+          value:
+            - apiGroups: [""]
+              resources: ["configmaps"]
+              resourceNames: ["podiumd-admin"]
+              verbs: ["get"]
+
+  - it: binds the Role to the ServiceAccount in the release namespace
+    template: rolebinding.yaml
+    asserts:
+      - isKind:
+          of: RoleBinding
+      - equal:
+          path: roleRef
+          value:
+            apiGroup: rbac.authorization.k8s.io
+            kind: Role
+            name: podiumd-admin
+      - equal:
+          path: subjects
+          value:
+            - kind: ServiceAccount
+              name: podiumd-admin
+              namespace: podiumd
+
+  # The checks below hold for any rule a later change adds to the Role. They
+  # use nested filters: in helm-unittest's jsonpath, `@.list[*] == x` compares
+  # one element only, while `@.list[?(@ == x)]` matches any element.
+
+  - it: grants no pods/exec, nor any resource by wildcard
+    template: role.yaml
+    asserts:
+      - notExists:
+          path: "rules[?(@.resources[?(@ == 'pods/exec')])]"
+      - notExists:
+          path: "rules[?(@.resources[?(@ == 'pods/*')])]"
+      - notExists:
+          path: "rules[?(@.resources[?(@ == '*')])]"
+      - notExists:
+          path: "rules[?(@.apiGroups[?(@ == '*')])]"
+
+  - it: grants no list or watch on Secrets, nor any verb by wildcard
+    template: role.yaml
+    asserts:
+      - notExists:
+          path: "rules[?(@.resources[?(@ == 'secrets')])].verbs[?(@ == 'list')]"
+      - notExists:
+          path: "rules[?(@.resources[?(@ == 'secrets')])].verbs[?(@ == 'watch')]"
+      - notExists:
+          path: "rules[?(@.verbs[?(@ == '*')])]"

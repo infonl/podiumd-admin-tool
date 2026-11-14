@@ -1,0 +1,105 @@
+# The Service, the optional Ingress and HTTPRoute, and the optional
+# PodDisruptionBudget (task 11.2, design D8).
+suite: exposure
+templates:
+  - service.yaml
+  - ingress.yaml
+  - httproute.yaml
+  - pdb.yaml
+values:
+  - values/onsdorp.yaml
+release:
+  name: podiumd-admin
+  namespace: podiumd
+tests:
+  - it: always creates a ClusterIP Service to the http port
+    template: service.yaml
+    asserts:
+      - isKind:
+          of: Service
+      - equal:
+          path: spec.type
+          value: ClusterIP
+      - equal:
+          path: spec.ports
+          value:
+            - name: http
+              port: 80
+              targetPort: http
+              protocol: TCP
+
+  - it: creates no Ingress, HTTPRoute or PodDisruptionBudget by default
+    asserts:
+      - hasDocuments:
+          count: 0
+        template: ingress.yaml
+      - hasDocuments:
+          count: 0
+        template: httproute.yaml
+      - hasDocuments:
+          count: 0
+        template: pdb.yaml
+
+  - it: routes the public hostname, without its port, through the Ingress
+    template: ingress.yaml
+    values:
+      - values/all-features.yaml
+    asserts:
+      - isKind:
+          of: Ingress
+      - equal:
+          path: spec.ingressClassName
+          value: nginx
+      - equal:
+          path: spec.rules[0].host
+          value: admin.podiumd.onsdorp.example
+      - equal:
+          path: spec.rules[0].http.paths[0].backend.service
+          value:
+            name: podiumd-admin
+            port:
+              name: http
+      - equal:
+          path: spec.tls
+          value:
+            - hosts:
+                - admin.podiumd.onsdorp.example
+              secretName: podiumd-admin-tls
+
+  - it: routes the public hostname, without its port, through the HTTPRoute
+    template: httproute.yaml
+    values:
+      - values/all-features.yaml
+    asserts:
+      - isKind:
+          of: HTTPRoute
+      - isAPIVersion:
+          of: gateway.networking.k8s.io/v1
+      - equal:
+          path: spec.hostnames
+          value:
+            - admin.podiumd.onsdorp.example
+      - equal:
+          path: spec.parentRefs
+          value:
+            - name: public-gateway
+              namespace: ingress-basic
+              sectionName: https
+      - equal:
+          path: spec.rules[0].backendRefs
+          value:
+            - name: podiumd-admin
+              port: 80
+
+  - it: lets a single replica be drained with maxUnavailable 1
+    template: pdb.yaml
+    set:
+      pdb.create: true
+    asserts:
+      - isKind:
+          of: PodDisruptionBudget
+      - equal:
+          path: spec.maxUnavailable
+          value: 1
+      - notExists:
+          path: spec.minAvailable

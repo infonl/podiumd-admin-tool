@@ -1,0 +1,102 @@
+# Every optional feature switched on, for the Onsdorp test Environment.
+global:
+  imageRegistry: registry.onsdorp.example
+image:
+  tag: 0.1.0@sha256:0000000000000000000000000000000000000000000000000000000000000000
+imagePullSecrets:
+  - name: onsdorp-registry
+settings:
+  environment:
+    municipality: Onsdorp
+    stage: accp
+    label: Acceptatie 2
+  publicHostname: admin.podiumd.onsdorp.example:8443
+  oidc:
+    issuer: https://keycloak.onsdorp.example/realms/podiumd
+    clientId: podiumd-admin
+    clientSecret:
+      existingSecret: podiumd-admin-oidc
+      key: oidc-client-secret
+  auth:
+    roleClaim: realm_access.roles
+    roles:
+      viewer: podiumd-admin-viewer
+      operator: podiumd-admin-operator
+  database:
+    app:
+      existingSecret: podiumd-admin-db-app
+      key: app-url
+    owner:
+      existingSecret: podiumd-admin-db-owner
+      key: owner-url
+  session:
+    encryptionKeys:
+      existingSecret: podiumd-admin-session
+      key: keys
+    idleTimeoutMinutes: 15
+    maxLifetimeMinutes: 240
+  trustedProxies:
+    - 10.244.0.0/16
+    - fd00::/8
+extraEnvVars:
+  - name: PGSSLROOTCERT
+    value: /etc/podiumd-admin/db-ca/ca.crt
+extraVolumes:
+  - name: db-ca
+    secret:
+      secretName: podiumd-admin-db-ca
+extraVolumeMounts:
+  - name: db-ca
+    mountPath: /etc/podiumd-admin/db-ca
+    readOnly: true
+serviceAccount:
+  create: true
+  name: podiumd-admin-onsdorp
+  annotations:
+    onsdorp.example/owner: podiumd
+podLabels:
+  onsdorp.example/team: podiumd
+podAnnotations:
+  onsdorp.example/scrape: "false"
+nodeSelector:
+  kubernetes.io/os: linux
+tolerations:
+  - key: podiumd
+    operator: Exists
+    effect: NoSchedule
+affinity:
+  nodeAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 1
+        preference:
+          matchExpressions:
+            - key: onsdorp.example/pool
+              operator: In
+              values: [apps]
+topologySpreadConstraints:
+  - maxSkew: 1
+    topologyKey: topology.kubernetes.io/zone
+    whenUnsatisfiable: ScheduleAnyway
+    labelSelector:
+      matchLabels:
+        app.kubernetes.io/name: podiumd-admin
+pdb:
+  create: true
+service:
+  annotations:
+    onsdorp.example/service: admin
+ingress:
+  enabled: true
+  className: nginx
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt
+  tls:
+    - secretName: podiumd-admin-tls
+httpRoute:
+  enabled: true
+  annotations:
+    onsdorp.example/route: admin
+  parentRefs:
+    - name: public-gateway
+      namespace: ingress-basic
+      sectionName: https
