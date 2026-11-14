@@ -6,7 +6,9 @@ access-control, "Roles". Design D2 and D4:
 - every request resumes its Session: one past its idle timeout or absolute
   lifetime ends; an expired access token is refreshed before the request is
   authorised, and the roles are read again from the new token; a refused
-  refresh ends the Session;
+  refresh ends the Session. A request that refreshed saves the refreshed
+  Session; any other request only touches ``last_seen_at``, so it cannot
+  write back tokens and roles that a concurrent refresh replaced;
 - a Session that ends by itself gets exactly one ``session-expired``/``info``
   Audit Entry with the reason. Removing the Session (which purges its
   tokens) and inserting that entry happen in one transaction, and the entry
@@ -133,6 +135,7 @@ class Sessions:
             )
             return None
 
+        refreshed: Session | None = None
         if access_token_expired(session.tokens, now):
             refreshed = await self._refresh(session, session.tokens)
             if refreshed is None:
@@ -143,12 +146,14 @@ class Sessions:
                     correlation_id,
                 )
                 return None
-            session = refreshed
 
-        session = dataclasses.replace(session, last_seen_at=now)
+        session = dataclasses.replace(refreshed or session, last_seen_at=now)
         async with self._unit_of_work.begin() as transaction:
-            saved = await transaction.sessions.save(session_id, session)
-        if not saved:
+            if refreshed is not None:
+                stored = await transaction.sessions.save(session_id, session)
+            else:
+                stored = await transaction.sessions.touch(session_id, seen_at=now)
+        if not stored:
             return None
         return ActiveSession(session_id=session_id, session=session)
 

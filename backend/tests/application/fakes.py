@@ -6,7 +6,7 @@ import contextlib
 import copy
 import hashlib
 from collections.abc import AsyncIterator
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
 from urllib.parse import urlencode
 
@@ -101,9 +101,19 @@ class FakeSessionStore:
         return self.sessions.get(session_id)
 
     async def save(self, session_id: str, session: Session) -> bool:
-        if session_id not in self.sessions:
+        stored = self.sessions.get(session_id)
+        if stored is None:
             return False
-        self.sessions[session_id] = session
+        last_seen_at = max(stored.last_seen_at, session.last_seen_at)
+        self.sessions[session_id] = replace(session, last_seen_at=last_seen_at)
+        return True
+
+    async def touch(self, session_id: str, *, seen_at: datetime) -> bool:
+        stored = self.sessions.get(session_id)
+        if stored is None:
+            return False
+        last_seen_at = max(stored.last_seen_at, seen_at)
+        self.sessions[session_id] = replace(stored, last_seen_at=last_seen_at)
         return True
 
     async def remove(self, session_id: str) -> bool:

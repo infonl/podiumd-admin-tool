@@ -9,6 +9,7 @@ ones, both without knowing the session identifier: they get an opaque ref.
 from __future__ import annotations
 
 import asyncio
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -87,6 +88,69 @@ async def test_save_of_an_ended_session_changes_nothing(app_engine: AsyncEngine)
 
     assert saved is False
     assert rows == 0
+
+
+async def test_save_never_moves_last_seen_at_back(app_engine: AsyncEngine) -> None:
+    """A refresh that committed after a later touch keeps the later touch."""
+    later = CREATED_AT + timedelta(minutes=10)
+    await _add(app_engine, ("session-1", _session(last_seen_at=later)))
+    refreshed = _session(
+        last_seen_at=CREATED_AT + timedelta(minutes=5), roles=frozenset(), tokens=_tokens("2")
+    )
+
+    async with app_engine.begin() as connection:
+        saved = await _store(connection).save("session-1", refreshed)
+    async with app_engine.connect() as connection:
+        found = await _store(connection).get("session-1")
+
+    assert saved is True
+    assert found == replace(refreshed, last_seen_at=later)
+
+
+async def test_a_stale_touch_leaves_a_refreshed_session_alone(app_engine: AsyncEngine) -> None:
+    """A request that read the Session before a refresh touches it after the refresh."""
+    await _add(app_engine, ("session-1", _session()))
+    refreshed = _session(
+        last_seen_at=CREATED_AT + timedelta(minutes=10),
+        roles=frozenset({Role.OPERATOR}),
+        username="j.jansen-de-vries",
+        tokens=_tokens("2"),
+    )
+    async with app_engine.begin() as connection:
+        assert await _store(connection).save("session-1", refreshed) is True
+
+    async with app_engine.begin() as connection:
+        touched = await _store(connection).touch(
+            "session-1", seen_at=CREATED_AT + timedelta(minutes=5)
+        )
+    async with app_engine.connect() as connection:
+        found = await _store(connection).get("session-1")
+
+    assert touched is True
+    assert found == refreshed
+
+
+async def test_touch_moves_last_seen_at_forward_only(app_engine: AsyncEngine) -> None:
+    await _add(app_engine, ("session-1", _session()))
+    seen_at = CREATED_AT + timedelta(minutes=3)
+
+    async with app_engine.begin() as connection:
+        touched = await _store(connection).touch("session-1", seen_at=seen_at)
+    async with app_engine.connect() as connection:
+        found = await _store(connection).get("session-1")
+
+    assert touched is True
+    assert found == _session(last_seen_at=seen_at)
+
+
+@pytest.mark.parametrize("session_id", ["gone", "", "   "])
+async def test_touch_of_an_ended_session_reports_it_gone(
+    app_engine: AsyncEngine, session_id: str
+) -> None:
+    async with app_engine.begin() as connection:
+        touched = await _store(connection).touch(session_id, seen_at=CREATED_AT)
+
+    assert touched is False
 
 
 async def test_remove_deletes_the_row_with_its_tokens(app_engine: AsyncEngine) -> None:

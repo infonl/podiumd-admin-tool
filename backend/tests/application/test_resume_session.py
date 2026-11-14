@@ -339,12 +339,45 @@ async def test_a_session_ended_meanwhile_is_not_resumed(
 ) -> None:
     """Sign-out in another tab between reading and touching the session."""
     unit_of_work.sessions.sessions[SESSION_ID] = _session()
-    original_save = unit_of_work.sessions.save
+    original_get = unit_of_work.sessions.get
 
-    async def save_after_removal(session_id: str, session: Session) -> bool:
+    async def get_then_remove(session_id: str) -> Session | None:
+        found = await original_get(session_id)
         unit_of_work.sessions.sessions.pop(session_id, None)
-        return await original_save(session_id, session)
+        return found
 
-    unit_of_work.sessions.save = save_after_removal  # type: ignore[method-assign]
+    unit_of_work.sessions.get = get_then_remove  # type: ignore[method-assign]
 
     assert await _resume(sessions) is None
+    assert SESSION_ID not in unit_of_work.sessions.sessions
+
+
+async def test_a_touch_after_a_concurrent_refresh_keeps_the_refreshed_session(
+    sessions: Sessions, unit_of_work: FakeUnitOfWork, clock: FakeClock
+) -> None:
+    """Request A reads a valid token; request B refreshes and commits before A touches.
+
+    A must not write back the tokens and roles it read: on a realm that
+    rotates refresh tokens the next refresh would send a revoked one.
+    """
+    unit_of_work.sessions.sessions[SESSION_ID] = _session()
+    clock.advance(timedelta(minutes=2))
+    refreshed = _session(
+        roles=frozenset({Role.OPERATOR}),
+        username="j.jansen-de-vries",
+        last_seen_at=clock.now() + timedelta(seconds=30),
+        tokens=tokens(expires_at=NOW + timedelta(minutes=10), suffix="2"),
+    )
+    original_get = unit_of_work.sessions.get
+
+    async def get_then_refresh_elsewhere(session_id: str) -> Session | None:
+        stale = await original_get(session_id)
+        unit_of_work.sessions.sessions[session_id] = refreshed
+        return stale
+
+    unit_of_work.sessions.get = get_then_refresh_elsewhere  # type: ignore[method-assign]
+
+    active = await _resume(sessions)
+
+    assert active is not None
+    assert unit_of_work.sessions.sessions[SESSION_ID] == refreshed

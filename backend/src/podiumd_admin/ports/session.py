@@ -8,6 +8,9 @@ Back-channel logout and the expiry sweep find sessions without knowing their
 identifier. They get a ``StoredSession`` with an opaque ``ref``, which
 identifies the stored session but cannot be presented as a session identifier.
 
+A request that did not refresh only touches the Session (``touch``); only a
+refresh replaces it (``save``). Neither moves ``last_seen_at`` backwards.
+
 Ending a Session because it expired uses the conditional removals: the expiry
 is checked again in the same step that removes the Session, so a request that
 touched it after it was read keeps it.
@@ -42,7 +45,20 @@ class SessionStore(Protocol):
         ...
 
     async def save(self, session_id: str, session: Session) -> bool:
-        """Replace the Session for ``session_id``; ``False`` if it is no longer stored."""
+        """Replace the Session for ``session_id``; ``False`` if it is no longer stored.
+
+        ``last_seen_at`` never moves backwards: if the stored one is later, it
+        is kept.
+        """
+        ...
+
+    async def touch(self, session_id: str, *, seen_at: datetime) -> bool:
+        """Move ``last_seen_at`` forward to ``seen_at``, never backwards.
+
+        Tokens, roles and username are left alone, so a request that read the
+        Session before a concurrent refresh cannot write the old ones back.
+        ``False`` if the Session is no longer stored.
+        """
         ...
 
     async def remove(self, session_id: str) -> bool:

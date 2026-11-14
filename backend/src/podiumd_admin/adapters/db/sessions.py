@@ -18,7 +18,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import ColumnElement, Row, delete, insert, or_, select, update
+from sqlalchemy import ColumnElement, Row, delete, func, insert, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncConnection
 
 from podiumd_admin.adapters.db.session_crypto import (
@@ -82,13 +82,33 @@ class SqlSessionStore:
         )
 
     async def save(self, session_id: str, session: Session) -> bool:
-        """Replace the stored Session; ``False`` if it is no longer stored."""
+        """Replace the stored Session; ``False`` if it is no longer stored.
+
+        ``last_seen_at`` only moves forward: a later one already stored is kept.
+        """
+        if not _known(session_id):
+            return False
+        values = self._values(session)
+        values["last_seen_at"] = func.greatest(sessions.c.last_seen_at, session.last_seen_at)
+        result = await self._connection.execute(
+            update(sessions)
+            .where(sessions.c.id_hash == hash_session_id(session_id))
+            .values(**values)
+        )
+        return result.rowcount == 1
+
+    async def touch(self, session_id: str, *, seen_at: datetime) -> bool:
+        """Move ``last_seen_at`` forward to ``seen_at``; ``False`` if it is no longer stored.
+
+        Only that column is written. PostgreSQL counts the row as matched even
+        when ``last_seen_at`` is already later, so ``True`` means it is stored.
+        """
         if not _known(session_id):
             return False
         result = await self._connection.execute(
             update(sessions)
             .where(sessions.c.id_hash == hash_session_id(session_id))
-            .values(**self._values(session))
+            .values(last_seen_at=func.greatest(sessions.c.last_seen_at, seen_at))
         )
         return result.rowcount == 1
 
