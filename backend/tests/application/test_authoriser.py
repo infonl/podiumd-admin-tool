@@ -20,7 +20,13 @@ from podiumd_admin.domain.authorisation import Permission
 from podiumd_admin.domain.roles import Role
 from podiumd_admin.domain.session import Session
 from tests.application.conftest import AUTH_SETTINGS, CLIENT_IP, ENVIRONMENT, NOW
-from tests.application.fakes import FakeAuditSink, FakeClock, FakeUnitOfWork, tokens
+from tests.application.fakes import (
+    FakeAuditSink,
+    FakeClock,
+    FakeTransactionAbortedError,
+    FakeUnitOfWork,
+    tokens,
+)
 
 TARGET = "POST /api/v1/session/sign-out"
 
@@ -117,3 +123,43 @@ async def test_a_refusal_stands_when_its_entry_cannot_be_stored(
 
     [(entry, _error)] = sink.write_failures
     assert entry.reason is ReasonCode.NO_ROLE
+
+
+async def test_a_refusal_stands_and_is_reported_if_the_database_is_unreachable(
+    authoriser: Authoriser, unit_of_work: FakeUnitOfWork, sink: FakeAuditSink
+) -> None:
+    # PR #51 review: a failing begin() was swallowed without a stdout report.
+    begin_error = ConnectionError("database unreachable")
+    unit_of_work.begin_error = begin_error
+
+    with pytest.raises(AccessDeniedError):
+        await _require(authoriser, frozenset())
+
+    [(entry, error)] = sink.write_failures
+    assert (entry.reason, error) == (ReasonCode.NO_ROLE, begin_error)
+
+
+async def test_a_refusal_stands_and_is_reported_if_the_commit_fails(
+    authoriser: Authoriser, unit_of_work: FakeUnitOfWork, sink: FakeAuditSink
+) -> None:
+    unit_of_work.abort_next_audited_commit = True
+
+    with pytest.raises(AccessDeniedError):
+        await _require(authoriser, frozenset())
+
+    assert unit_of_work.audit.entries == []
+    [(entry, error)] = sink.write_failures
+    assert entry.reason is ReasonCode.NO_ROLE
+    assert isinstance(error, FakeTransactionAbortedError)
+
+
+async def test_a_refusal_stands_if_its_failure_cannot_be_reported(
+    authoriser: Authoriser, unit_of_work: FakeUnitOfWork, sink: FakeAuditSink
+) -> None:
+    unit_of_work.begin_error = ConnectionError("database unreachable")
+    sink.report_error = OSError("stdout closed")
+
+    with pytest.raises(AccessDeniedError):
+        await _require(authoriser, frozenset())
+
+    assert len(sink.write_failures) == 1

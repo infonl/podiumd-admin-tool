@@ -240,6 +240,64 @@ async def test_a_user_without_a_role_is_refused_even_if_the_entry_cannot_be_stor
     assert entry.reason is ReasonCode.NO_ROLE
 
 
+# Start and take each open a transaction before the denial opens its own.
+BEGINS_BEFORE_THE_DENIAL = 2
+
+
+async def test_a_user_without_a_role_is_refused_and_reported_if_the_database_is_unreachable(
+    sign_in: SignIn,
+    unit_of_work: FakeUnitOfWork,
+    identity_provider: FakeIdentityProvider,
+    sink: FakeAuditSink,
+) -> None:
+    # PR #51 review: a failing begin() was swallowed without a stdout report.
+    identity_provider.identity = identity([])
+    begin_error = ConnectionError("database unreachable")
+    unit_of_work.begin_error = begin_error
+    unit_of_work.begins_before_error = BEGINS_BEFORE_THE_DENIAL
+
+    result = await _complete(sign_in, unit_of_work)
+
+    assert result == NoAccess()
+    [(entry, error)] = sink.write_failures
+    assert (entry.reason, error) == (ReasonCode.NO_ROLE, begin_error)
+
+
+async def test_a_user_without_a_role_is_refused_and_reported_if_the_commit_fails(
+    sign_in: SignIn,
+    unit_of_work: FakeUnitOfWork,
+    identity_provider: FakeIdentityProvider,
+    sink: FakeAuditSink,
+) -> None:
+    identity_provider.identity = identity([])
+    unit_of_work.abort_next_audited_commit = True
+
+    result = await _complete(sign_in, unit_of_work)
+
+    assert result == NoAccess()
+    assert unit_of_work.audit.entries == []
+    [(entry, error)] = sink.write_failures
+    assert entry.reason is ReasonCode.NO_ROLE
+    assert isinstance(error, FakeTransactionAbortedError)
+
+
+async def test_a_user_without_a_role_is_refused_if_the_failure_cannot_be_reported(
+    sign_in: SignIn,
+    unit_of_work: FakeUnitOfWork,
+    identity_provider: FakeIdentityProvider,
+    sink: FakeAuditSink,
+) -> None:
+    identity_provider.identity = identity([])
+    unit_of_work.begin_error = ConnectionError("database unreachable")
+    unit_of_work.begins_before_error = BEGINS_BEFORE_THE_DENIAL
+    sink.report_error = OSError("stdout closed")
+
+    result = await _complete(sign_in, unit_of_work)
+
+    assert result == NoAccess()
+    assert len(sink.write_failures) == 1
+
+
 # --- Failed callbacks -------------------------------------------------------------------
 
 

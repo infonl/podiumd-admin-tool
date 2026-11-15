@@ -16,12 +16,11 @@ access-control, "Users without a role are refused". Design D2:
 
 from __future__ import annotations
 
-import contextlib
 import hmac
 from dataclasses import dataclass
 from typing import Final
 
-from podiumd_admin.application.audit import AuditRecorder
+from podiumd_admin.application.audit import AuditRecorder, record_denial_in
 from podiumd_admin.application.authentication import AuthSettings, new_random_value
 from podiumd_admin.application.unauthenticated_failures import UnauthenticatedFailureAggregator
 from podiumd_admin.domain.audit import AuditEntry, Outcome, ReasonCode
@@ -195,15 +194,10 @@ class SignIn:
     async def _record_denial(self, entry: AuditEntry) -> None:
         """Store a denial; the user is refused whether or not it could be stored.
 
-        A failed insert is written to stdout by ``record_denial``; the commit
-        of the transaction it aborted then raises, which is swallowed here.
+        ``record_denial_in`` never raises for a storage failure; it writes
+        every failure to stdout once.
         """
-        with contextlib.suppress(Exception):
-            async with self._unit_of_work.begin() as transaction:
-                recorder = AuditRecorder(
-                    repository=transaction.audit_repository, sink=self._audit_sink
-                )
-                await recorder.record_denial(entry)
+        await record_denial_in(self._unit_of_work, self._audit_sink, entry)
 
     def _failed(self, reason: ReasonCode, client_ip: str | None) -> SignInFailed:
         """Count the failure for stdout; without a client IP there is nothing to count it under."""

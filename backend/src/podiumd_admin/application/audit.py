@@ -7,7 +7,9 @@ Spec: audit-log, "No action without an Audit Entry". Design D4:
   ``AuditWriteFailedError`` tells the caller the action could not be
   recorded, so the user can be shown that error.
 - A denial is refused even when its Audit Entry cannot be stored. The failure
-  is then written to stdout through the ``AuditSink``.
+  is then written to stdout through the ``AuditSink``, exactly once, whether
+  the transaction could not begin, the insert failed or the commit failed
+  (``record_denial_in``).
 
 For a database-only action, the caller runs ``record_then_act`` inside one
 unit of work, so the insert and the action commit together. The stdout copy of
@@ -21,6 +23,7 @@ from collections.abc import Awaitable, Callable
 
 from podiumd_admin.domain.audit import AuditEntry, Outcome
 from podiumd_admin.ports.audit import AuditRepository, AuditSink
+from podiumd_admin.ports.unit_of_work import UnitOfWork
 
 
 class AuditWriteFailedError(Exception):
@@ -59,15 +62,16 @@ class AuditRecorder:
             raise AuditWriteFailedError(entry) from error
         return await action()
 
-    async def record_denial(self, entry: AuditEntry) -> None:
+    async def record_denial(self, entry: AuditEntry) -> bool:
         """Store the ``denied`` ``entry``; the caller refuses the request either way.
 
-        A storage failure is written to stdout and does not raise, so it can
-        never turn a denial into anything else.
+        Returns whether the insert succeeded. A failed insert is written to
+        stdout and does not raise, so it can never turn a denial into anything
+        else. The insert can still be lost when the caller's transaction does
+        not commit; ``record_denial_in`` reports that too.
         """
-        if entry.outcome is not Outcome.DENIED:
-            raise ValueError(f"record_denial needs a denied entry, got {entry.outcome}")
-        await self._store(entry)
+        _require_denied(entry)
+        return await self._store(entry) is None
 
     async def _store(self, entry: AuditEntry) -> Exception | None:
         """Insert ``entry``; on failure report it to stdout and return the error.
@@ -85,3 +89,31 @@ class AuditRecorder:
                 self._sink.audit_write_failed(entry, error)
             return error
         return None
+
+
+async def record_denial_in(unit_of_work: UnitOfWork, sink: AuditSink, entry: AuditEntry) -> None:
+    """Store the ``denied`` ``entry`` in its own transaction; never raises for a failure.
+
+    The caller refuses the request either way. Every way the entry can fail to
+    be stored is written to stdout exactly once: a transaction that cannot
+    begin (the database is unreachable), a failed insert (reported by
+    ``record_denial``; the commit of the transaction it aborted then raises
+    and is not reported again), or a commit that fails after the insert. If
+    that stdout report fails as well, it is dropped, as in ``_store``. Only
+    ``Exception`` is caught, so cancellation propagates.
+    """
+    _require_denied(entry)
+    insert_failure_reported = False
+    try:
+        async with unit_of_work.begin() as transaction:
+            recorder = AuditRecorder(repository=transaction.audit_repository, sink=sink)
+            insert_failure_reported = not await recorder.record_denial(entry)
+    except Exception as error:
+        if not insert_failure_reported:
+            with contextlib.suppress(Exception):
+                sink.audit_write_failed(entry, error)
+
+
+def _require_denied(entry: AuditEntry) -> None:
+    if entry.outcome is not Outcome.DENIED:
+        raise ValueError(f"record_denial needs a denied entry, got {entry.outcome}")

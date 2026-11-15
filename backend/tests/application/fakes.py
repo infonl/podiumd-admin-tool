@@ -205,6 +205,10 @@ class FakeUnitOfWork:
     inserted Audit Entries fail the same way, for a test of issue #30;
     ``abort_error`` is the error raised, so an HTTP test can use the adapter's
     own ``TransactionAbortedError``.
+
+    ``begin_error`` makes a ``begin()`` raise it without opening a
+    transaction, as when the database is unreachable; ``begins_before_error``
+    first lets that many transactions open normally.
     """
 
     sink: FakeAuditSink
@@ -215,9 +219,16 @@ class FakeUnitOfWork:
     rollbacks: int = 0
     abort_next_audited_commit: bool = False
     abort_error: type[Exception] = field(default_factory=lambda: FakeTransactionAbortedError)
+    begin_error: BaseException | None = None
+    begins_before_error: int = 0
 
     @contextlib.asynccontextmanager
     async def begin(self) -> AsyncIterator[FakeTransaction]:
+        if self.begin_error is not None:
+            if self.begins_before_error == 0:
+                error, self.begin_error = self.begin_error, None
+                raise error
+            self.begins_before_error -= 1
         sessions = copy.copy(self.sessions.sessions)
         attempts = copy.copy(self.sign_in_attempts.attempts)
         entries = len(self.audit.entries)

@@ -15,11 +15,20 @@ from typing import Any
 
 import pytest
 
-from podiumd_admin.application.audit import AuditRecorder, AuditWriteFailedError
+from podiumd_admin.application.audit import (
+    AuditRecorder,
+    AuditWriteFailedError,
+    record_denial_in,
+)
 from podiumd_admin.domain.audit import AuditEntry, Outcome, ReasonCode
 from podiumd_admin.domain.environment import EnvironmentIdentity, Stage
 from podiumd_admin.ports.audit import AuditRepository, AuditSink
-from tests.application.fakes import FakeAuditRepository, FakeAuditSink
+from tests.application.fakes import (
+    FakeAuditRepository,
+    FakeAuditSink,
+    FakeTransactionAbortedError,
+    FakeUnitOfWork,
+)
 
 ENVIRONMENT = EnvironmentIdentity(municipality="Onsdorp", stage=Stage.ACCP)
 
@@ -185,7 +194,7 @@ async def test_denial_is_recorded(
 ) -> None:
     entry = _entry(Outcome.DENIED)
 
-    await recorder.record_denial(entry)
+    assert await recorder.record_denial(entry) is True
 
     assert repository.entries == [entry]
     assert sink.write_failures == []
@@ -199,7 +208,7 @@ async def test_denial_still_denies_when_the_insert_fails_and_reports_it_on_stdou
     entry = _entry(Outcome.DENIED)
 
     # No exception: the caller goes on to refuse the request.
-    await recorder.record_denial(entry)
+    assert await recorder.record_denial(entry) is False
 
     assert repository.entries == []
     assert sink.write_failures == [(entry, insert_error)]
@@ -245,3 +254,93 @@ async def test_record_denial_takes_only_denied_entries(
         await recorder.record_denial(_entry(outcome, reason=reason))
 
     assert repository.events == []
+
+
+# --- record_denial_in: the denial's own transaction -------------------------------
+
+
+@pytest.fixture
+def unit_of_work(sink: FakeAuditSink) -> FakeUnitOfWork:
+    return FakeUnitOfWork(sink=sink)
+
+
+async def test_a_denial_in_its_own_transaction_is_stored_and_copied_to_stdout(
+    unit_of_work: FakeUnitOfWork, sink: FakeAuditSink
+) -> None:
+    entry = _entry(Outcome.DENIED)
+
+    await record_denial_in(unit_of_work, sink, entry)
+
+    assert unit_of_work.audit.entries == [entry]
+    assert sink.stored == [entry]
+    assert sink.write_failures == []
+
+
+async def test_a_denial_whose_transaction_cannot_begin_is_reported_once(
+    unit_of_work: FakeUnitOfWork, sink: FakeAuditSink
+) -> None:
+    # PR #51 review: a failing begin() was swallowed without a stdout report.
+    begin_error = ConnectionError("database unreachable")
+    unit_of_work.begin_error = begin_error
+    entry = _entry(Outcome.DENIED)
+
+    await record_denial_in(unit_of_work, sink, entry)
+
+    assert sink.write_failures == [(entry, begin_error)]
+
+
+async def test_a_denial_whose_commit_fails_after_the_insert_is_reported_once(
+    unit_of_work: FakeUnitOfWork, sink: FakeAuditSink
+) -> None:
+    unit_of_work.abort_next_audited_commit = True
+    entry = _entry(Outcome.DENIED)
+
+    await record_denial_in(unit_of_work, sink, entry)
+
+    assert unit_of_work.audit.entries == []
+    [(reported, error)] = sink.write_failures
+    assert reported == entry
+    assert isinstance(error, FakeTransactionAbortedError)
+
+
+async def test_a_failed_denial_insert_is_reported_once_not_again_for_the_aborted_commit(
+    unit_of_work: FakeUnitOfWork, sink: FakeAuditSink
+) -> None:
+    insert_error = ConnectionError("insert privilege revoked")
+    unit_of_work.audit.error = insert_error
+    entry = _entry(Outcome.DENIED)
+
+    await record_denial_in(unit_of_work, sink, entry)
+
+    assert sink.write_failures == [(entry, insert_error)]
+
+
+async def test_a_denial_does_not_raise_when_the_begin_and_its_stdout_report_both_fail(
+    unit_of_work: FakeUnitOfWork, sink: FakeAuditSink
+) -> None:
+    unit_of_work.begin_error = ConnectionError("database unreachable")
+    sink.report_error = OSError("stdout closed")
+
+    await record_denial_in(unit_of_work, sink, _entry(Outcome.DENIED))
+
+    assert len(sink.write_failures) == 1
+
+
+async def test_cancellation_while_beginning_a_denial_transaction_propagates(
+    unit_of_work: FakeUnitOfWork, sink: FakeAuditSink
+) -> None:
+    unit_of_work.begin_error = asyncio.CancelledError()
+
+    with pytest.raises(asyncio.CancelledError):
+        await record_denial_in(unit_of_work, sink, _entry(Outcome.DENIED))
+
+    assert sink.write_failures == []
+
+
+async def test_record_denial_in_takes_only_denied_entries(
+    unit_of_work: FakeUnitOfWork, sink: FakeAuditSink
+) -> None:
+    with pytest.raises(ValueError, match="denied"):
+        await record_denial_in(unit_of_work, sink, _entry(Outcome.ALLOWED))
+
+    assert unit_of_work.audit.events == []

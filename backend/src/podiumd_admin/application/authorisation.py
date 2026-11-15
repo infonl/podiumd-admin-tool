@@ -17,10 +17,9 @@ Permitted requests are not recorded here: an allowed action records its own
 
 from __future__ import annotations
 
-import contextlib
 from typing import NoReturn
 
-from podiumd_admin.application.audit import AuditRecorder
+from podiumd_admin.application.audit import record_denial_in
 from podiumd_admin.application.authentication import AuthSettings
 from podiumd_admin.application.sessions import ActiveSession
 from podiumd_admin.domain.audit import AuditEntry, Outcome, ParameterValue, ReasonCode
@@ -123,13 +122,7 @@ class Authoriser:
             correlation_id=correlation_id,
             client_ip=client_ip,
         )
-        # A failed insert is written to stdout by record_denial; the commit of
-        # the transaction it aborted then raises, which must not turn the
-        # refusal into anything else.
-        with contextlib.suppress(Exception):
-            async with self._unit_of_work.begin() as transaction:
-                recorder = AuditRecorder(
-                    repository=transaction.audit_repository, sink=self._audit_sink
-                )
-                await recorder.record_denial(entry)
+        # record_denial_in never raises for a storage failure (it writes each
+        # one to stdout once), so it cannot turn the refusal into anything else.
+        await record_denial_in(self._unit_of_work, self._audit_sink, entry)
         raise AccessDeniedError(reason)
