@@ -5,6 +5,7 @@ metadata:
   name: {{ include "podiumd-admin.fullname" . }}
   labels:
     {{- include "podiumd-admin.labels" . | nindent 4 }}
+    app.kubernetes.io/component: web
 spec:
   # One replica at most (ADR 0010), replaced with Recreate, so two versions
   # never run against the same database schema.
@@ -13,14 +14,11 @@ spec:
     type: Recreate
   selector:
     matchLabels:
-      {{- include "podiumd-admin.selectorLabels" . | nindent 6 }}
+      {{- include "podiumd-admin.webSelectorLabels" . | nindent 6 }}
   template:
     metadata:
       labels:
-        {{- include "podiumd-admin.labels" . | nindent 8 }}
-        {{- with .Values.podLabels }}
-        {{- toYaml . | nindent 8 }}
-        {{- end }}
+        {{- include "podiumd-admin.podLabels" (dict "context" . "component" "web") | nindent 8 }}
       annotations:
         # A changed setting restarts the pod (the ConfigMap is not watched).
         # A new chart version already does, through the helm.sh/chart label.

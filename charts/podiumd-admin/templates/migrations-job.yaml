@@ -27,11 +27,7 @@ spec:
   template:
     metadata:
       labels:
-        {{- include "podiumd-admin.labels" . | nindent 8 }}
-        app.kubernetes.io/component: migrations
-        {{- with .Values.podLabels }}
-        {{- toYaml . | nindent 8 }}
-        {{- end }}
+        {{- include "podiumd-admin.podLabels" (dict "context" . "component" "migrations") | nindent 8 }}
       {{- with .Values.podAnnotations }}
       annotations:
         {{- toYaml . | nindent 8 }}

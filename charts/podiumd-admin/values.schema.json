@@ -383,7 +383,16 @@
     },
     "podLabels": {
       "type": "object",
-      "description": "Labels added to the pods.",
+      "description": "Labels added to the pods. They cannot set the selector labels app.kubernetes.io/name, app.kubernetes.io/instance or app.kubernetes.io/component.",
+      "propertyNames": {
+        "not": {
+          "enum": [
+            "app.kubernetes.io/name",
+            "app.kubernetes.io/instance",
+            "app.kubernetes.io/component"
+          ]
+        }
+      },
       "additionalProperties": {
         "type": "string"
       }

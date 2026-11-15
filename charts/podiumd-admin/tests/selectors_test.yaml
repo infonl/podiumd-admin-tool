@@ -1,0 +1,79 @@
+# The web workload's selector (PR #58 review): the Deployment, Service and
+# PodDisruptionBudget select only the Admin Tool pod, through
+# app.kubernetes.io/component: web, never the migration Job's pod. A
+# Deployment's selector cannot change after install, so this is fixed before
+# the first release.
+suite: selectors
+templates:
+  - deployment.yaml
+  - service.yaml
+  - pdb.yaml
+  - migrations-job.yaml
+values:
+  - values/onsdorp.yaml
+release:
+  name: podiumd-admin
+  namespace: podiumd
+tests:
+  - it: selects the web pod in the Deployment, Service and PodDisruptionBudget
+    set:
+      pdb.create: true
+    asserts:
+      - equal:
+          path: spec.selector.matchLabels
+          value: &webSelector
+            app.kubernetes.io/name: podiumd-admin
+            app.kubernetes.io/instance: podiumd-admin
+            app.kubernetes.io/component: web
+        template: deployment.yaml
+      - equal:
+          path: spec.selector
+          value: *webSelector
+        template: service.yaml
+      - equal:
+          path: spec.selector.matchLabels
+          value: *webSelector
+        template: pdb.yaml
+
+  - it: gives the Deployment pod every selector label, even with podLabels
+    template: deployment.yaml
+    values:
+      - values/all-features.yaml
+    asserts:
+      - isSubset:
+          path: spec.template.metadata.labels
+          content:
+            app.kubernetes.io/name: podiumd-admin
+            app.kubernetes.io/instance: podiumd-admin
+            app.kubernetes.io/component: web
+            onsdorp.example/team: podiumd
+
+  - it: keeps the migration pod out of the web selector
+    template: migrations-job.yaml
+    asserts:
+      - equal:
+          path: spec.template.metadata.labels["app.kubernetes.io/component"]
+          value: migrations
+      - equal:
+          path: metadata.labels["app.kubernetes.io/component"]
+          value: migrations
+
+  # The schema library reports a wrong location for a propertyNames error, so
+  # the tests match the refused name.
+  - it: refuses podLabels that would change a selector label
+    template: deployment.yaml
+    set:
+      podLabels:
+        app.kubernetes.io/component: migrations
+    asserts:
+      - failedTemplate:
+          errorPattern: "invalid propertyName 'app.kubernetes.io/component'"
+
+  - it: refuses podLabels that would change the name or instance label
+    template: deployment.yaml
+    set:
+      podLabels:
+        app.kubernetes.io/instance: other
+    asserts:
+      - failedTemplate:
+          errorPattern: "invalid propertyName 'app.kubernetes.io/instance'"

@@ -152,7 +152,8 @@ serviceAccount:
   # -- The ServiceAccount name; empty uses the full name.
   name: ""
 
-# -- Labels added to the pods.
+# -- Labels added to the pods. They cannot set the selector labels
+# app.kubernetes.io/name, instance or component.
 podLabels: {}
 # -- Annotations added to the pods.
 podAnnotations: {}

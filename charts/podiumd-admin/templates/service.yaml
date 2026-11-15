@@ -16,4 +16,4 @@ spec:
       targetPort: http
       protocol: TCP
   selector:
-    {{- include "podiumd-admin.selectorLabels" . | nindent 4 }}
+    {{- include "podiumd-admin.webSelectorLabels" . | nindent 4 }}

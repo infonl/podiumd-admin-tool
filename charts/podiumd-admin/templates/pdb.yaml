@@ -19,5 +19,5 @@ spec:
   {{- end }}
   selector:
     matchLabels:
-      {{- include "podiumd-admin.selectorLabels" . | nindent 6 }}
+      {{- include "podiumd-admin.webSelectorLabels" . | nindent 6 }}
 {{- end }}

@@ -38,6 +38,16 @@ app.kubernetes.io/name: {{ include "podiumd-admin.name" . }}
 app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end }}
 
+{{/*
+The selector of the web workload: the Deployment, the Service and the
+PodDisruptionBudget. The component label keeps the migration Job's pod
+(component: migrations) out of it.
+*/}}
+{{- define "podiumd-admin.webSelectorLabels" -}}
+{{ include "podiumd-admin.selectorLabels" . }}
+app.kubernetes.io/component: web
+{{- end }}
+
 {{- define "podiumd-admin.labels" -}}
 helm.sh/chart: {{ include "podiumd-admin.chart" . }}
 {{ include "podiumd-admin.selectorLabels" . }}
@@ -124,4 +134,17 @@ affinity:
 tolerations:
   {{- toYaml . | nindent 2 }}
 {{- end }}
+{{- end }}
+
+{{/*
+The labels of a pod: the chart labels, the component and podLabels. Called
+with (dict "context" $ "component" "<component>"). The chart labels win over
+podLabels, so podLabels never changes a selector label; values.schema.json
+refuses those keys as well.
+*/}}
+{{- define "podiumd-admin.podLabels" -}}
+{{- $context := .context }}
+{{- $labels := fromYaml (include "podiumd-admin.labels" $context) }}
+{{- $_ := set $labels "app.kubernetes.io/component" .component }}
+{{- toYaml (merge $labels (default (dict) $context.Values.podLabels)) }}
 {{- end }}
