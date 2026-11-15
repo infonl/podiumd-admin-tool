@@ -34,6 +34,7 @@ Format: `- [area] What was missed (PR) → the check that catches it.`
 - [platform] The chart rendered with the same role name for Viewer and Operator, which the backend refuses at startup; with `strategy: Recreate` that upgrade is an outage (#58). → For every cross-field rule in `config.py`, add a template-time `fail` in the chart, and test each field changed alone as well as a valid swap.
 - [platform] The chart schema accepted a `publicHostname` port of 0 or above 65535 (`[0-9]{1,5}`), which the backend refuses at startup (#58). → A digit-count pattern is not a range check: check numeric ranges at template time (or with a range regex), and test both boundaries and the first value outside each.
 - [platform] The chart schema accepted any authority in the OIDC issuer, including a port above 65535 or a non-numeric port that the backend's `urlsplit().port` refuses (#58). → A URL pattern in the chart spells out host and port as the backend parses them, with tests for an out-of-range port, a non-numeric port, an IPv6 literal and the loopback form.
+- [platform] The chart schema limited `publicHostname` to 259 characters over host and port together, while the backend limits the host alone to 253, so a 254 to 259 character host rendered and then failed at startup (#58). → A length limit in the chart applies to the same part of the value as the backend's (`config.py` `_public_hostname`): check the host without its port at template time, with tests at 253 and 254 characters, with and without a port.
 
 ## Consistency and drift
 
