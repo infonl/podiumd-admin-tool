@@ -64,7 +64,7 @@ The prompt tells you which packages the code-reviewer approved.
 - **File a `follow-up` issue for every reviewer suggestion or developer note that is deferred to later work,** e.g. "for task group 6". Give the location, the problem and the proposal, so nothing lives only in PR text.
 - Push the feature branch, never `main`.
 - Open a PR to `main` with `gh pr create`. The body has the sections Summary, **Decisions for you** (if any), Quality checks, Review, Follow-up (with issue links) and Test plan. In issue mode it says `Fixes #<issue>`. It ends with `🤖 Generated with [Claude Code](https://claude.com/claude-code)`. Use no @mentions.
-- If the review never approved, open the PR as a draft and list the unresolved issues.
+- If the review never approved, open the PR as a draft and list the unresolved issues. Note that **Copilot does not review draft PRs**: say in the PR and in your report that the Copilot review starts only once the PR is marked ready (`gh pr ready <n>`), which happens after the open issues are settled.
 - Don't wait for CI or the Copilot review; that is the next step.
 
 ## Copilot reviews
@@ -99,7 +99,7 @@ If a required job failed, read its log (`gh run view <run> --log-failed`). If it
 ### Apply the triage
 
 The code-reviewer gave one decision per finding. Carry out exactly those:
-- **fix:** the developer fixed it and the reviewer approved. Push, reply in the thread naming the commit, and resolve the thread.
+- **fix:** the developer fixed it and the reviewer approved. Before pushing, add one line to `docs/review-lessons.md` under the matching heading, in its format: `- [area] What was missed (#<pr>) → the check that catches it.` Use the code-reviewer's reason and expected fix, and commit it with the fixes (`docs: add a review lesson from #<pr>`). Then push, reply in the thread naming the commit, and resolve the thread.
 - **follow-up:** create a GitHub issue labelled `follow-up` (plus `bug` or `enhancement`) that gives the location, the problem and the proposed fix. Reply in the thread with the issue link, and resolve it.
 - **decline:** reply with the code-reviewer's reasoning, and resolve the thread.
 
