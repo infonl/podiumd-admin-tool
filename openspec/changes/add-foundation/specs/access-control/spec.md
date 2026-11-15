@@ -29,10 +29,24 @@ A user who completes sign-in but holds neither role SHALL get no session that gr
 
 A **read** is a request that only retrieves data. It SHALL use HTTP GET and SHALL have no side effects. An **action** is any request that changes state, in the Admin Tool Instance or the Environment. It SHALL use a non-GET HTTP method. In this change, the only actions are sign-in completion and sign-out. Later changes add actions such as starting a Script Run.
 
+The OIDC **sign-in start** (`GET /auth/sign-in`) and **sign-in callback** (`GET /auth/callback`) are the one exception. They follow the standard Authorization Code flow with PKCE (`response_mode=query`), so they are top-level GET navigations that change state: they create the pre-auth record, and the callback creates the Session and writes the `sign-in` Audit Entry. They SHALL NOT rely on the CSRF header. They SHALL be protected by the single-use, unguessable `state` bound to the `__Host-` sign-in cookie (`SameSite=Lax`), compared in constant time and consumed by the first callback that presents the sign-in cookie, whether or not its `state` matches. No other GET route may change state.
+
+#### Scenario: Sign-in routes are the only state-changing GET routes
+
+- **WHEN** the automated route test enumerates all GET routes
+- **THEN** only `GET /auth/sign-in` and `GET /auth/callback` are allowed to change state, and they are named explicitly in the test's allowlist
+
+#### Scenario: A replayed or forged callback is refused
+
+- **WHEN** `GET /auth/callback` arrives with a `state` that does not match the sign-in cookie, or with a `state` that was already used
+- **THEN** no Session is created and no Audit Entry is stored
+- **AND** the pending sign-in attempt is discarded and the sign-in cookie is cleared, so the user starts a new sign-in
+- **AND** the failure is counted only by the stdout aggregator for unauthenticated failures
+
 #### Scenario: GET has no side effects
 
 - **WHEN** the automated route test enumerates all GET routes
-- **THEN** none of them is registered as an action
+- **THEN** none of them is registered as an action, apart from the two sign-in routes allowlisted above
 
 ### Requirement: Every request is authorised on the server
 
