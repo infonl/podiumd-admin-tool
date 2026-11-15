@@ -12,8 +12,9 @@
 # (Helm and helm-unittest) and .github/tools/kubeconform/Dockerfile, their
 # single version sources, so CI and local runs use the same tools. The Helm
 # containers get the chart read-only and no network. kubeconform downloads
-# the Kubernetes and CRD JSON schemas, from the commits pinned below, into the
-# Docker volume podiumd-admin-kubeconform-cache.
+# the Kubernetes and CRD JSON schemas, from the commits pinned below, into a
+# Docker volume of its own for each run, which is removed afterwards: parallel
+# runs on one Docker daemon never share a half-written schema.
 #
 # The supported Kubernetes versions are listed in
 # charts/podiumd-admin/tests/kubernetes-versions; `helm template --kube-version`
@@ -92,8 +93,20 @@ run_unittest() {
   in_helm_image sh -c 'cp -R /chart /tmp/chart && exec helm unittest --strict /tmp/chart'
 }
 
+# The temp file and the cache volume of run_kubeconform, removed on exit.
+kubeconform_manifests=''
+kubeconform_cache_volume=''
+kubeconform_cleanup() {
+  if [[ -n ${kubeconform_manifests} ]]; then
+    rm -f "${kubeconform_manifests}"
+  fi
+  if [[ -n ${kubeconform_cache_volume} ]]; then
+    docker volume rm -f "${kubeconform_cache_volume}" >/dev/null || true
+  fi
+}
+
 run_kubeconform() {
-  local version values manifests
+  local version values
   local versions=()
   while IFS= read -r version; do
     version=${version%%#*}
@@ -107,20 +120,27 @@ run_kubeconform() {
     exit 1
   fi
 
-  manifests=$(mktemp)
-  trap 'rm -f "${manifests}"' RETURN
+  # The script exits after this function, so one EXIT trap cleans up after
+  # a success, a failure under set -e and an interrupt.
+  trap kubeconform_cleanup EXIT
+  trap 'exit 130' INT
+  trap 'exit 143' TERM
+  kubeconform_manifests=$(mktemp)
+  # A volume per run: parallel runs on one Docker daemon do not share it.
+  kubeconform_cache_volume="podiumd-admin-kubeconform-cache-$$-${RANDOM}${RANDOM}"
+  docker volume create "${kubeconform_cache_volume}" >/dev/null
   for version in "${versions[@]}"; do
     for values in "${values_files[@]}"; do
       echo "Kubernetes ${version}, tests/values/${values}: helm template | kubeconform (${kubeconform_image})" >&2
       helm_run template podiumd-admin . \
         --namespace podiumd \
         --kube-version "${version}" \
-        --values "tests/values/${values}" >"${manifests}"
+        --values "tests/values/${values}" >"${kubeconform_manifests}"
       docker run --rm -i \
         --read-only \
         --cap-drop ALL \
         --security-opt no-new-privileges \
-        --volume podiumd-admin-kubeconform-cache:/cache \
+        --volume "${kubeconform_cache_volume}:/cache" \
         "${kubeconform_image}" \
         -strict \
         -summary \
@@ -128,7 +148,7 @@ run_kubeconform() {
         -cache /cache \
         -schema-location "${k8s_schemas}" \
         -schema-location "${crd_schemas}" \
-        - <"${manifests}"
+        - <"${kubeconform_manifests}"
     done
   done
 }
