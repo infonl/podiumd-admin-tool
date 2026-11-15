@@ -31,6 +31,9 @@ Format: `- [area] What was missed (PR) → the check that catches it.`
 - [backend] A malformed `X-Forwarded-For` header could cause a 500 (#34). → Every header from a request falls back safely when it is malformed.
 - [backend] A backward clock step could make `last_at` earlier than `first_at` and lose counted failures (#14). → Time values that must not go backwards are kept monotonic, and a test steps the clock back.
 - [platform] The chart accepted an idle timeout longer than the session lifetime, which the backend refuses at startup (#58). → A constraint between two settings is checked in the chart with a template-time `fail` (JSON Schema cannot compare fields), with a test on each side of the boundary.
+- [platform] The chart rendered with the same role name for Viewer and Operator, which the backend refuses at startup; with `strategy: Recreate` that upgrade is an outage (#58). → For every cross-field rule in `config.py`, add a template-time `fail` in the chart, and test each field changed alone as well as a valid swap.
+- [platform] The chart schema accepted a `publicHostname` port of 0 or above 65535 (`[0-9]{1,5}`), which the backend refuses at startup (#58). → A digit-count pattern is not a range check: check numeric ranges at template time (or with a range regex), and test both boundaries and the first value outside each.
+- [platform] The chart schema accepted any authority in the OIDC issuer, including a port above 65535 or a non-numeric port that the backend's `urlsplit().port` refuses (#58). → A URL pattern in the chart spells out host and port as the backend parses them, with tests for an out-of-range port, a non-numeric port, an IPv6 literal and the loopback form.
 
 ## Consistency and drift
 
