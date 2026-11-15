@@ -150,11 +150,20 @@ kubectl --namespace podiumd create secret generic podiumd-admin-session \
 ```
 
 The value is a comma-separated list, the primary key first. To rotate, put a
-new key in front (`<new key>,<old key>`) and restart the Admin Tool: new
-tokens use the new key, while sessions encrypted with the old key keep
-working. Remove the old key once its sessions have expired (after
-`settings.session.maxLifetimeMinutes`). The Admin Tool refuses to start
-without a key, and with the development key that ships for local use.
+new key in front (`<new key>,<old key>`) and restart the Admin Tool, because
+changing a Secret does not restart the pod:
+
+```sh
+kubectl --namespace podiumd rollout restart deployment/podiumd-admin
+```
+
+New tokens use the new key, while sessions encrypted with the old key keep
+working. A session's end is fixed when the user signs in, so remove the old
+key only once every session signed in before the rotation has expired: after
+the longest `settings.session.maxLifetimeMinutes` in effect since the
+rotation (at most 720 minutes). Removing it earlier only makes those users
+sign in again. The Admin Tool refuses to start without a key, and with the
+development key that ships for local use.
 
 Restrict who can read these Secrets in the namespace: they give full access to
 the Admin Tool's database and its Keycloak client.
@@ -329,5 +338,9 @@ the HTTPRoute itself in the release namespace (`httpRoute.enabled: true`, with
 that namespace. An Ingress is also available (`ingress.enabled: true`). Both
 use `settings.publicHostname` as their host.
 
-Once the route is in place, `https://admin.podiumd.onsdorp.example` shows the
-Keycloak sign-in.
+Once the route is in place, check it:
+
+- `https://admin.podiumd.onsdorp.example/readyz` answers `200` once the
+  database is reachable;
+- `https://admin.podiumd.onsdorp.example/auth/sign-in` redirects to the
+  Keycloak sign-in.
