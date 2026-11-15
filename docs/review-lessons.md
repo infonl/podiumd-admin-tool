@@ -25,6 +25,7 @@ Format: `- [area] What was missed (PR) → the check that catches it.`
 
 ## Input and time
 
+- [backend] `max_length` on the sign-in callback's query and cookie parameters made FastAPI return a 422 before the handler ran, so the attempt was not consumed, the cookie stayed and the failure was not recorded (#51). → Input that is part of a security flow is bounded inside the use case, not with request validation; a test sends an oversized value and checks every side effect of the normal failure path.
 - [platform] Quoted (non-ASCII) paths from `git diff` matched no area, so the path gate skipped checks (#26). → Read raw paths (`-z`, `core.quotePath=false`) and test non-ASCII, quotes and backslashes.
 - [backend] The local-issuer check mangled IPv6 hosts such as `[::1]` (#34). → Test IPv4, IPv6 and host names for every address or URL parsing.
 - [backend] A malformed `X-Forwarded-For` header could cause a 500 (#34). → Every header from a request falls back safely when it is malformed.
@@ -38,4 +39,5 @@ Format: `- [area] What was missed (PR) → the check that catches it.`
 - [platform] Chart selectors matched the migration Job pod because the selector labels were a subset of the shared labels, so the PodDisruptionBudget selected a Job-owned pod (#58). → Give each workload its own selector label (e.g. `component`), and test that no other pod template satisfies a selector.
 - [platform] The PodDisruptionBudget rendered both `minAvailable` and `maxUnavailable` when only one was set, which the Kubernetes API rejects (#58). → For mutually exclusive chart values, test each combination, including a zero value, against the rendered manifest.
 - [all] An implementation followed the standard OIDC flow (GET callback) while the spec said actions are never GET; it was only found in review (#51). → Pre-flight: read the spec requirement and scenarios of each task before building, and report conflicts as a decision first.
+- [all] A spec said a forged sign-in callback changes nothing, while the code deliberately consumed the attempt and cleared the cookie (#51). → When a behaviour is a deliberate security choice, the spec scenario states every side effect, and the code comment says why the alternative was rejected.
 - [all] A commit message gave the wrong reason for a version pin (#26). → Claims in commit messages say what was verified.
