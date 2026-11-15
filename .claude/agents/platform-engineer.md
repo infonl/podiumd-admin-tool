@@ -22,7 +22,7 @@ First follow the **Developer rules** in `CLAUDE.md`. They cover scope, test-firs
 - **Not yours:** backend and frontend source code. If a platform change needs one, say so in your report.
 
 ## Hard rules
-- **Required checks:** `main` requires `backend`, `frontend`, `image`, `chart`, `hygiene`, `CodeQL (python)` and `CodeQL (javascript-typescript)` (`chart` once it is added to the `protect-main` ruleset after the Helm chart PR).
+- **Required checks:** `main` requires `backend`, `frontend`, `image`, `chart`, `hygiene`, `CodeQL (python)` and `CodeQL (javascript-typescript)`.
   - Never rename or remove them.
   - Never gate a workflow with `on.paths`; use the existing `changes` job and `.github/scripts/changed-areas.sh`.
   - Every new job that becomes required must always report.
