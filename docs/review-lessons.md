@@ -24,6 +24,7 @@ Format: `- [area] What was missed (PR) → the check that catches it.`
 
 ## Input and time
 
+- [backend] `max_length` on the sign-in callback's query and cookie parameters made FastAPI return a 422 before the handler ran, so the attempt was not consumed, the cookie stayed and the failure was not recorded (#51). → Input that is part of a security flow is bounded inside the use case, not with request validation; a test sends an oversized value and checks every side effect of the normal failure path.
 - [platform] Quoted (non-ASCII) paths from `git diff` matched no area, so the path gate skipped checks (#26). → Read raw paths (`-z`, `core.quotePath=false`) and test non-ASCII, quotes and backslashes.
 - [backend] The local-issuer check mangled IPv6 hosts such as `[::1]` (#34). → Test IPv4, IPv6 and host names for every address or URL parsing.
 - [backend] A malformed `X-Forwarded-For` header could cause a 500 (#34). → Every header from a request falls back safely when it is malformed.
