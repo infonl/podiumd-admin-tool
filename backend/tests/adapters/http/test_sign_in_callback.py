@@ -41,6 +41,14 @@ def _cookie_attributes(response: httpx2.Response, name: str) -> set[str]:
     raise AssertionError(f"no Set-Cookie for {name}")
 
 
+def _assert_sign_in_cookie_cleared(response: httpx2.Response) -> None:
+    """The sign-in cookie is cleared whatever the outcome: the attempt has been used."""
+    assert any(
+        attribute.startswith("max-age=0") or attribute.startswith("expires=")
+        for attribute in _cookie_attributes(response, SIGN_IN_COOKIE)
+    )
+
+
 def test_a_successful_callback_signs_the_user_in(auth_client: TestClient, world: AuthWorld) -> None:
     state = _start(auth_client)
 
@@ -64,11 +72,7 @@ def test_the_session_cookie_is_a_host_only_secure_cookie(auth_client: TestClient
     assert not any(
         attribute.startswith(("domain", "max-age", "expires")) for attribute in attributes
     )
-    # The sign-in cookie is cleared: the attempt has been used.
-    assert any(
-        attribute.startswith("max-age=0") or attribute.startswith("expires=")
-        for attribute in _cookie_attributes(response, SIGN_IN_COOKIE)
-    )
+    _assert_sign_in_cookie_cleared(response)
 
 
 def test_a_presented_session_id_is_never_adopted(auth_client: TestClient, world: AuthWorld) -> None:
@@ -92,6 +96,7 @@ def test_a_user_without_a_role_sees_the_no_access_page(
     assert response.status_code == 302
     assert response.headers["location"] == "/no-access"
     assert SESSION_COOKIE not in response.cookies
+    _assert_sign_in_cookie_cleared(response)
     assert world.unit_of_work.sessions.sessions == {}
     [entry] = world.unit_of_work.audit.entries
     assert (entry.outcome, entry.reason) == (Outcome.DENIED, ReasonCode.NO_ROLE)
@@ -126,6 +131,7 @@ def test_a_failed_callback_creates_no_session(
     assert _query(location)["correlation_id"]
     assert "error" not in _query(location)
     assert SESSION_COOKIE not in response.cookies
+    _assert_sign_in_cookie_cleared(response)
     assert world.unit_of_work.sessions.sessions == {}
     assert world.unit_of_work.audit.entries == []
     world.failures.flush_all()
@@ -160,6 +166,7 @@ def test_an_audit_failure_creates_no_session_and_shows_the_error_page(
     assert _query(location)["error"] == "action-not-recorded"
     assert _query(location)["correlation_id"]
     assert SESSION_COOKIE not in response.cookies
+    _assert_sign_in_cookie_cleared(response)
     assert world.unit_of_work.sessions.sessions == {}
 
 
@@ -175,5 +182,6 @@ def test_an_aborted_transaction_creates_no_session_and_shows_the_error_page(
 
     assert _query(response.headers["location"])["error"] == "action-not-recorded"
     assert SESSION_COOKIE not in response.cookies
+    _assert_sign_in_cookie_cleared(response)
     assert world.unit_of_work.sessions.sessions == {}
     assert world.sink.stored == []
