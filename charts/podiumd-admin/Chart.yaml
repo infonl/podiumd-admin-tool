@@ -1,0 +1,18 @@
+apiVersion: v2
+name: podiumd-admin
+description: >-
+  The PodiumD Admin Tool: a web application for the administrators of one
+  PodiumD Environment, installed into that Environment's PodiumD namespace.
+type: application
+# The chart version; bumped with every change to the chart.
+version: 0.1.0
+# The image tag used when image.tag is empty.
+appVersion: "0.1.0"
+# The oldest Kubernetes version the chart supports. .github/scripts/chart-check.sh
+# renders and validates the chart for every supported version.
+kubeVersion: ">=1.34.0-0"
+home: https://github.com/infonl/podiumd-admin-tool
+sources:
+  - https://github.com/infonl/podiumd-admin-tool
+annotations:
+  licenses: EUPL-1.2

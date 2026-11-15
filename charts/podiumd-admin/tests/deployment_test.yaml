@@ -1,0 +1,271 @@
+# The Deployment (task 11.2, design D7/D8, ADR 0007, ADR 0010).
+suite: deployment
+templates:
+  - deployment.yaml
+values:
+  - values/onsdorp.yaml
+release:
+  name: podiumd-admin
+  namespace: podiumd
+tests:
+  - it: runs one replica, replaced with Recreate
+    asserts:
+      - isKind:
+          of: Deployment
+      - equal:
+          path: spec.replicas
+          value: 1
+      - equal:
+          path: spec.strategy
+          value:
+            type: Recreate
+
+  - it: can be stopped with replicaCount 0
+    set:
+      replicaCount: 0
+    asserts:
+      - equal:
+          path: spec.replicas
+          value: 0
+
+  - it: hardens the container security context (spec "Security context")
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.runAsNonRoot
+          value: true
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.readOnlyRootFilesystem
+          value: true
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.allowPrivilegeEscalation
+          value: false
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.privileged
+          value: false
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.capabilities
+          value:
+            drop:
+              - ALL
+
+  - it: runs the pod as uid and gid 1000 with the RuntimeDefault seccomp profile
+    asserts:
+      - equal:
+          path: spec.template.spec.securityContext
+          value:
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            fsGroup: 1000
+            seccompProfile:
+              type: RuntimeDefault
+
+  - it: keeps the hardening when an installer adds to the security context
+    set:
+      securityContext:
+        seLinuxOptions:
+          level: s0:c123,c456
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.readOnlyRootFilesystem
+          value: true
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.seLinuxOptions.level
+          value: s0:c123,c456
+
+  - it: mounts /tmp as an emptyDir, the only writable path
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: tmp
+            mountPath: /tmp
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: tmp
+            emptyDir: {}
+
+  - it: keeps the image command and serves on port 8000
+    asserts:
+      - notExists:
+          path: spec.template.spec.containers[0].command
+      - notExists:
+          path: spec.template.spec.containers[0].args
+      - equal:
+          path: spec.template.spec.containers[0].ports
+          value:
+            - name: http
+              containerPort: 8000
+              protocol: TCP
+
+  - it: probes /healthz for liveness and /readyz for readiness
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].livenessProbe.httpGet
+          value:
+            path: /healthz
+            port: http
+      - equal:
+          path: spec.template.spec.containers[0].readinessProbe.httpGet
+          value:
+            path: /readyz
+            port: http
+
+  - it: uses the image from ghcr.io with the chart's appVersion by default
+    chart:
+      appVersion: 9.8.7
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].image
+          value: ghcr.io/infonl/podiumd-admin-tool:9.8.7
+
+  - it: uses global.imageRegistry and a tag with a digest
+    set:
+      global.imageRegistry: registry.onsdorp.example
+      image.tag: 1.2.3@sha256:1111111111111111111111111111111111111111111111111111111111111111
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].image
+          value: registry.onsdorp.example/infonl/podiumd-admin-tool:1.2.3@sha256:1111111111111111111111111111111111111111111111111111111111111111
+
+  - it: takes the non-secret settings from the chart's ConfigMap
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].envFrom
+          value:
+            - configMapRef:
+                name: podiumd-admin
+
+  - it: uses the app database credentials from their Secret
+    set:
+      settings.database.app.key: app-url
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: PODIUMD_ADMIN_DATABASE_APP_URL
+            valueFrom:
+              secretKeyRef:
+                name: podiumd-admin-db-app
+                key: app-url
+
+  - it: never gets the owner database credentials
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: PODIUMD_ADMIN_DATABASE_OWNER_URL
+          any: true
+      - equal:
+          path: spec.template.spec.containers[0].env
+          value:
+            - name: PODIUMD_ADMIN_DATABASE_APP_URL
+              valueFrom:
+                secretKeyRef:
+                  name: podiumd-admin-db-app
+                  key: url
+            - name: PODIUMD_ADMIN_OIDC_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: podiumd-admin-oidc
+                  key: client-secret
+            - name: PODIUMD_ADMIN_SESSION_ENCRYPTION_KEYS
+              valueFrom:
+                secretKeyRef:
+                  name: podiumd-admin-session
+                  key: encryption-keys
+
+  - it: takes the client secret and the session encryption keys from their Secrets
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: PODIUMD_ADMIN_OIDC_CLIENT_SECRET
+            valueFrom:
+              secretKeyRef:
+                name: podiumd-admin-oidc
+                key: client-secret
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: PODIUMD_ADMIN_SESSION_ENCRYPTION_KEYS
+            valueFrom:
+              secretKeyRef:
+                name: podiumd-admin-session
+                key: encryption-keys
+
+  - it: adds extraEnvVars, extraVolumes and extraVolumeMounts
+    values:
+      - values/all-features.yaml
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: PGSSLROOTCERT
+            value: /etc/podiumd-admin/db-ca/ca.crt
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: db-ca
+            secret:
+              secretName: podiumd-admin-db-ca
+      - contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: db-ca
+            mountPath: /etc/podiumd-admin/db-ca
+            readOnly: true
+
+  - it: restarts the pod when a setting changes
+    set:
+      settings.session.idleTimeoutMinutes: 10
+    asserts:
+      - matchRegex:
+          path: spec.template.metadata.annotations["checksum/settings"]
+          pattern: ^[0-9a-f]{64}$
+
+  - it: does not mount a ServiceAccount token and gets no service links
+    asserts:
+      - equal:
+          path: spec.template.spec.automountServiceAccountToken
+          value: false
+      - equal:
+          path: spec.template.spec.enableServiceLinks
+          value: false
+      - equal:
+          path: spec.template.spec.serviceAccountName
+          value: podiumd-admin
+
+  - it: passes the scheduling values on to the pod
+    values:
+      - values/all-features.yaml
+    asserts:
+      - equal:
+          path: spec.template.spec.nodeSelector
+          value:
+            kubernetes.io/os: linux
+      - equal:
+          path: spec.template.spec.imagePullSecrets
+          value:
+            - name: onsdorp-registry
+      - exists:
+          path: spec.template.spec.affinity.nodeAffinity
+      - exists:
+          path: spec.template.spec.tolerations
+      - exists:
+          path: spec.template.spec.topologySpreadConstraints
+      - equal:
+          path: spec.template.metadata.labels["onsdorp.example/team"]
+          value: podiumd
+      - equal:
+          path: spec.template.metadata.annotations["onsdorp.example/scrape"]
+          value: "false"
+
+  - it: uses fullnameOverride
+    set:
+      fullnameOverride: admin-tool
+    asserts:
+      - equal:
+          path: metadata.name
+          value: admin-tool

@@ -97,7 +97,7 @@
 
 ## 11. Helm chart `charts/podiumd-admin`
 
-- [ ] 11.1 Scaffold the chart following the Maykin/PodiumD conventions (`fullnameOverride`, `existingSecret`, `extraEnv`, `podSecurityContext`), with a `values.schema.json` that requires the stage, Municipality, `publicHostname`, Keycloak issuer and client, and all Secret references.
+- [ ] 11.1 Scaffold the chart following the Maykin/PodiumD conventions (`fullnameOverride`, `existingSecret`, `extraEnvVars`, `podSecurityContext`), with a `values.schema.json` (issue #38). All `PODIUMD_ADMIN_*` application settings live under one strict `settings` property (named and typed, `additionalProperties: false`, secrets only as references to existing Secrets) that requires the stage, Municipality, `publicHostname`, Keycloak issuer and client, and all Secret references. The common Kubernetes values use PodiumD's names and are typed, with Kubernetes objects typed as objects with free contents. Other keys are allowed outside `settings`, including `extraEnvVars`, `extraVolumes` and `extraVolumeMounts`, but an `extraEnvVars` entry named `PODIUMD_ADMIN_*` is refused.
 - [ ] 11.2 Add the Deployment: 1 replica, `Recreate` strategy, hardened securityContext, a `/tmp` emptyDir, liveness and readiness probes, and env from values and Secrets. Add the Service, an optional Ingress, and an optional HTTPRoute.
 - [ ] 11.3 Add the pre-install and pre-upgrade migration hook Job (`alembic upgrade head` with the owner credentials).
 - [ ] 11.4 Add the ServiceAccount, Role and RoleBinding skeleton (namespace-scoped, minimal).

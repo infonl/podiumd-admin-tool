@@ -1,0 +1,101 @@
+# The migration hook Job (task 11.3, design D8).
+suite: migrations job
+templates:
+  - migrations-job.yaml
+values:
+  - values/onsdorp.yaml
+release:
+  name: podiumd-admin
+  namespace: podiumd
+tests:
+  - it: is a pre-install and pre-upgrade hook
+    asserts:
+      - isKind:
+          of: Job
+      - equal:
+          path: metadata.annotations["helm.sh/hook"]
+          value: pre-install,pre-upgrade
+      - equal:
+          path: metadata.annotations["helm.sh/hook-delete-policy"]
+          value: before-hook-creation,hook-succeeded
+
+  - it: runs alembic upgrade head with /app/alembic.ini
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].command
+          value: ["alembic", "-c", "/app/alembic.ini", "upgrade", "head"]
+      - equal:
+          path: spec.template.spec.restartPolicy
+          value: Never
+
+  - it: uses the owner database credentials from their Secret
+    set:
+      settings.database.owner.key: owner-url
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: PODIUMD_ADMIN_DATABASE_OWNER_URL
+            valueFrom:
+              secretKeyRef:
+                name: podiumd-admin-db-owner
+                key: owner-url
+
+  - it: gets no other credentials
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: PODIUMD_ADMIN_DATABASE_APP_URL
+          any: true
+      - equal:
+          path: spec.template.spec.containers[0].env
+          value:
+            - name: PODIUMD_ADMIN_DATABASE_OWNER_URL
+              valueFrom:
+                secretKeyRef:
+                  name: podiumd-admin-db-owner
+                  key: url
+      - notExists:
+          path: spec.template.spec.containers[0].envFrom
+
+  - it: is hardened like the Admin Tool container
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].securityContext
+          value:
+            runAsNonRoot: true
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            privileged: false
+            capabilities:
+              drop:
+                - ALL
+      - equal:
+          path: spec.template.spec.securityContext.runAsNonRoot
+          value: true
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: tmp
+            emptyDir: {}
+
+  - it: runs without a ServiceAccount token, before the chart's ServiceAccount exists
+    asserts:
+      - notExists:
+          path: spec.template.spec.serviceAccountName
+      - equal:
+          path: spec.template.spec.automountServiceAccountToken
+          value: false
+
+  - it: limits retries and run time
+    set:
+      migrations.backoffLimit: 1
+      migrations.activeDeadlineSeconds: 300
+    asserts:
+      - equal:
+          path: spec.backoffLimit
+          value: 1
+      - equal:
+          path: spec.activeDeadlineSeconds
+          value: 300

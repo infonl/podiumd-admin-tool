@@ -1,0 +1,76 @@
+{{- /*
+The database migrations (task 11.3, design D8): `alembic upgrade head` with the
+owner role, before the install or upgrade changes anything else. A failed Job
+fails the install or upgrade, so the previous version keeps running. The Job
+gets only the owner role's database URL; the Deployment gets the app role's.
+
+It runs as the namespace's default ServiceAccount, without a token: a
+pre-install hook runs before the chart's own ServiceAccount exists, and the
+migrations do not call the Kubernetes API.
+*/ -}}
+{{- $owner := .Values.settings.database.owner -}}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "podiumd-admin.migrationsName" . }}
+  labels:
+    {{- include "podiumd-admin.labels" . | nindent 4 }}
+    app.kubernetes.io/component: migrations
+  annotations:
+    helm.sh/hook: pre-install,pre-upgrade
+    helm.sh/hook-weight: "0"
+    # A failed Job is kept for its logs until the next install or upgrade.
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: {{ .Values.migrations.backoffLimit }}
+  activeDeadlineSeconds: {{ .Values.migrations.activeDeadlineSeconds }}
+  template:
+    metadata:
+      labels:
+        {{- include "podiumd-admin.podLabels" (dict "context" . "component" "migrations") | nindent 8 }}
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      restartPolicy: Never
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      securityContext:
+        {{- include "podiumd-admin.podSecurityContext" . | nindent 8 }}
+      {{- with include "podiumd-admin.podScheduling" . | trim }}
+      {{- . | nindent 6 }}
+      {{- end }}
+      containers:
+        - name: migrations
+          image: {{ include "podiumd-admin.image" . | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          workingDir: /app
+          command: ["alembic", "-c", "/app/alembic.ini", "upgrade", "head"]
+          env:
+            - name: PODIUMD_ADMIN_DATABASE_OWNER_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $owner.existingSecret | quote }}
+                  key: {{ $owner.key | quote }}
+            {{- with .Values.extraEnvVars }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          {{- with .Values.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          securityContext:
+            {{- include "podiumd-admin.securityContext" . | nindent 12 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            {{- with .Values.extraVolumeMounts }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        {{- with .Values.extraVolumes }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}

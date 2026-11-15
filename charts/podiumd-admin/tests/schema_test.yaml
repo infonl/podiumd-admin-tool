@@ -1,0 +1,308 @@
+# values.schema.json (task 11.1, issue #38, design D8): `settings` is strict and
+# its required values must be set; outside `settings` extra keys are allowed,
+# but extraEnvVars cannot set a PODIUMD_ADMIN_* variable, and the security
+# contexts cannot be weakened (ADR 0007).
+suite: values schema
+templates:
+  - deployment.yaml
+values:
+  - values/onsdorp.yaml
+tests:
+  - it: renders with only the required values
+    asserts:
+      - notFailedTemplate: {}
+
+  - it: renders with every optional feature
+    values:
+      - values/all-features.yaml
+    asserts:
+      - notFailedTemplate: {}
+
+  # --- required settings -----------------------------------------------------
+  # `--set <value>=null` keeps the null when the chart has no default for the
+  # value, so the schema reports a null instead of a missing property; both
+  # fail. required_values_test.yaml covers values that are left out.
+
+  - it: requires the Municipality
+    set:
+      settings.environment.municipality: null
+    asserts:
+      - failedTemplate:
+          errorPattern: "at '/settings/environment(/municipality)?': (missing property 'municipality'|got null, want string)"
+
+  - it: requires the stage
+    set:
+      settings.environment.stage: null
+    asserts:
+      - failedTemplate:
+          errorPattern: "at '/settings/environment(/stage)?': (missing property 'stage'|got null, want string)"
+
+  - it: requires publicHostname
+    set:
+      settings.publicHostname: null
+    asserts:
+      - failedTemplate:
+          errorPattern: "at '/settings(/publicHostname)?': (missing property 'publicHostname'|got null, want string)"
+
+  - it: requires the Keycloak issuer
+    set:
+      settings.oidc.issuer: null
+    asserts:
+      - failedTemplate:
+          errorPattern: "at '/settings/oidc(/issuer)?': (missing property 'issuer'|got null, want string)"
+
+  - it: requires the Keycloak client id
+    set:
+      settings.oidc.clientId: null
+    asserts:
+      - failedTemplate:
+          errorPattern: "at '/settings/oidc(/clientId)?': (missing property 'clientId'|got null, want string)"
+
+  - it: requires the Keycloak client secret reference
+    set:
+      settings.oidc.clientSecret.existingSecret: null
+    asserts:
+      - failedTemplate:
+          errorPattern: "at '/settings/oidc/clientSecret(/existingSecret)?': (missing property 'existingSecret'|got null, want string)"
+
+  - it: requires the app database Secret reference
+    set:
+      settings.database.app.existingSecret: null
+    asserts:
+      - failedTemplate:
+          errorPattern: "at '/settings/database/app(/existingSecret)?': (missing property 'existingSecret'|got null, want string)"
+
+  - it: requires the owner database Secret reference
+    set:
+      settings.database.owner.existingSecret: null
+    asserts:
+      - failedTemplate:
+          errorPattern: "at '/settings/database/owner(/existingSecret)?': (missing property 'existingSecret'|got null, want string)"
+
+  - it: requires the session encryption keys Secret reference
+    set:
+      settings.session.encryptionKeys.existingSecret: null
+    asserts:
+      - failedTemplate:
+          errorPattern: "at '/settings/session/encryptionKeys(/existingSecret)?': (missing property 'existingSecret'|got null, want string)"
+
+  # --- settings is strict ----------------------------------------------------
+
+  - it: refuses an unknown key under settings
+    set:
+      settings.publicHostnmae: admin.podiumd.onsdorp.example
+    asserts:
+      - failedTemplate:
+          errorPattern: "at '/settings': additional properties 'publicHostnmae' not allowed"
+
+  - it: refuses an unknown key nested under settings
+    set:
+      settings.oidc.clientSecretValue: plain-text-secret
+    asserts:
+      - failedTemplate:
+          errorPattern: "at '/settings/oidc': additional properties 'clientSecretValue' not allowed"
+
+  - it: refuses a secret value instead of a Secret reference
+    set:
+      settings.session.encryptionKeys.value: not-a-reference
+    asserts:
+      - failedTemplate:
+          errorPattern: "at '/settings/session/encryptionKeys': additional properties 'value' not allowed"
+
+  - it: refuses an unknown stage
+    set:
+      settings.environment.stage: dev
+    asserts:
+      - failedTemplate:
+          errorPattern: "at '/settings/environment/stage': value must be one of 'test', 'accp', 'prod'"
+
+  - it: refuses a public hostname with a scheme
+    set:
+      settings.publicHostname: https://admin.podiumd.onsdorp.example
+    asserts:
+      - failedTemplate:
+          errorPattern: "at '/settings/publicHostname'"
+
+  - it: refuses an http issuer for a non-loopback host
+    set:
+      settings.oidc.issuer: http://keycloak.onsdorp.example/realms/podiumd
+    asserts:
+      - failedTemplate:
+          errorPattern: "at '/settings/oidc/issuer'"
+
+  # The backend reads the issuer port with urlsplit().port, which accepts an
+  # empty port or digits from 0 to 65535 and raises for anything else.
+  - it: refuses an issuer port above 65535
+    set:
+      settings.oidc.issuer: https://keycloak.onsdorp.example:99999/realms/podiumd
+    asserts:
+      - failedTemplate:
+          errorPattern: "at '/settings/oidc/issuer'"
+
+  - it: refuses issuer port 65536
+    set:
+      settings.oidc.issuer: https://keycloak.onsdorp.example:65536/realms/podiumd
+    asserts:
+      - failedTemplate:
+          errorPattern: "at '/settings/oidc/issuer'"
+
+  - it: refuses a non-numeric issuer port
+    set:
+      settings.oidc.issuer: https://keycloak.onsdorp.example:abc/realms/podiumd
+    asserts:
+      - failedTemplate:
+          errorPattern: "at '/settings/oidc/issuer'"
+
+  - it: refuses a loopback http issuer port above 65535
+    set:
+      settings.oidc.issuer: http://localhost:99999/realms/podiumd
+    asserts:
+      - failedTemplate:
+          errorPattern: "at '/settings/oidc/issuer'"
+
+  - it: allows an issuer with port 8443
+    set:
+      settings.oidc.issuer: https://keycloak.onsdorp.example:8443/realms/podiumd
+    asserts:
+      - notFailedTemplate: {}
+
+  - it: allows an issuer with port 65535
+    set:
+      settings.oidc.issuer: https://keycloak.onsdorp.example:65535/realms/podiumd
+    asserts:
+      - notFailedTemplate: {}
+
+  - it: allows an issuer with an IPv6 literal and a port
+    set:
+      settings.oidc.issuer: https://[::1]:8443/realms/podiumd
+    asserts:
+      - notFailedTemplate: {}
+
+  - it: allows a loopback http issuer with a port
+    set:
+      settings.oidc.issuer: http://localhost:8080/realms/podiumd
+    asserts:
+      - notFailedTemplate: {}
+
+  - it: refuses a session lifetime above 12 hours
+    set:
+      settings.session.maxLifetimeMinutes: 721
+    asserts:
+      - failedTemplate:
+          errorPattern: "at '/settings/session/maxLifetimeMinutes'"
+
+  - it: refuses trusting every address as a proxy
+    set:
+      settings.trustedProxies:
+        - 0.0.0.0/0
+    asserts:
+      - failedTemplate:
+          errorPattern: "at '/settings/trustedProxies/0'"
+
+  # --- outside settings: extra keys are allowed --------------------------------
+
+  - it: allows an extra top-level key
+    set:
+      onsdorpCustomValue:
+        anything: goes
+    asserts:
+      - notFailedTemplate: {}
+
+  - it: allows extraEnvVars, extraVolumes and extraVolumeMounts
+    set:
+      extraEnvVars:
+        - name: HTTPS_PROXY
+          value: http://proxy.onsdorp.example:3128
+      extraVolumes:
+        - name: extra
+          emptyDir: {}
+      extraVolumeMounts:
+        - name: extra
+          mountPath: /extra
+    asserts:
+      - notFailedTemplate: {}
+
+  - it: refuses an extraEnvVars entry that sets a PODIUMD_ADMIN_* variable
+    set:
+      extraEnvVars:
+        - name: PODIUMD_ADMIN_OIDC_ISSUER
+          value: https://evil.example/realms/podiumd
+    asserts:
+      - failedTemplate:
+          errorPattern: "at '/extraEnvVars/0/name': 'not' failed"
+
+  - it: refuses an extraEnvVars entry without a name
+    set:
+      extraEnvVars:
+        - value: orphan
+    asserts:
+      - failedTemplate:
+          errorPattern: "at '/extraEnvVars/0(/name)?': (missing property 'name'|got null, want string)"
+
+  # --- common Kubernetes values are typed ------------------------------------
+
+  - it: refuses more than one replica (ADR 0010)
+    set:
+      replicaCount: 2
+    asserts:
+      - failedTemplate:
+          errorPattern: "at '/replicaCount': value must be one of 0, 1"
+
+  - it: refuses a resources value that is not an object
+    set:
+      resources: 512Mi
+    asserts:
+      - failedTemplate:
+          errorPattern: "at '/resources'"
+
+  - it: refuses an enabled HTTPRoute without a Gateway
+    set:
+      httpRoute.enabled: true
+    asserts:
+      - failedTemplate:
+          errorPattern: "at '/httpRoute/parentRefs'"
+
+  # --- the security contexts cannot be weakened (ADR 0007) -------------------
+
+  - it: refuses a writable root filesystem
+    set:
+      securityContext.readOnlyRootFilesystem: false
+    asserts:
+      - failedTemplate:
+          errorPattern: "at '/securityContext/readOnlyRootFilesystem': value must be true"
+
+  - it: refuses privilege escalation
+    set:
+      securityContext.allowPrivilegeEscalation: true
+    asserts:
+      - failedTemplate:
+          errorPattern: "at '/securityContext/allowPrivilegeEscalation': value must be false"
+
+  - it: refuses a privileged container
+    set:
+      securityContext.privileged: true
+    asserts:
+      - failedTemplate:
+          errorPattern: "at '/securityContext/privileged': value must be false"
+
+  - it: refuses added capabilities
+    set:
+      securityContext.capabilities.add:
+        - NET_ADMIN
+    asserts:
+      - failedTemplate:
+          errorPattern: "at '/securityContext/capabilities/add'"
+
+  - it: refuses running the containers as root
+    set:
+      securityContext.runAsUser: 0
+    asserts:
+      - failedTemplate:
+          errorPattern: "at '/securityContext/runAsUser'"
+
+  - it: refuses running the pod as root
+    set:
+      podSecurityContext.runAsNonRoot: false
+    asserts:
+      - failedTemplate:
+          errorPattern: "at '/podSecurityContext/runAsNonRoot': value must be true"

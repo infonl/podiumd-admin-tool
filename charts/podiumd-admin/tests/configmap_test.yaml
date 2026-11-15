@@ -1,0 +1,166 @@
+# The non-secret settings as PODIUMD_ADMIN_* environment variables, with the
+# names in backend/src/podiumd_admin/config.py (task 11.2). The exact `data`
+# also shows that no secret and no Secret reference ends up in the ConfigMap.
+suite: configmap
+templates:
+  - configmap.yaml
+values:
+  - values/onsdorp.yaml
+release:
+  name: podiumd-admin
+  namespace: podiumd
+tests:
+  - it: maps the required settings and the defaults
+    asserts:
+      - equal:
+          path: data
+          value:
+            PODIUMD_ADMIN_ENVIRONMENT_MUNICIPALITY: Onsdorp
+            PODIUMD_ADMIN_ENVIRONMENT_STAGE: test
+            PODIUMD_ADMIN_PUBLIC_HOSTNAME: admin.podiumd.onsdorp.example
+            PODIUMD_ADMIN_OIDC_ISSUER: https://keycloak.onsdorp.example/realms/podiumd
+            PODIUMD_ADMIN_OIDC_CLIENT_ID: podiumd-admin
+            PODIUMD_ADMIN_AUTH_ROLES_VIEWER: viewer
+            PODIUMD_ADMIN_AUTH_ROLES_OPERATOR: operator
+            PODIUMD_ADMIN_SESSION_IDLE_TIMEOUT_MINUTES: "30"
+            PODIUMD_ADMIN_SESSION_MAX_LIFETIME_MINUTES: "480"
+
+  - it: maps every optional setting
+    values:
+      - values/all-features.yaml
+    asserts:
+      - equal:
+          path: data
+          value:
+            PODIUMD_ADMIN_ENVIRONMENT_MUNICIPALITY: Onsdorp
+            PODIUMD_ADMIN_ENVIRONMENT_STAGE: accp
+            PODIUMD_ADMIN_ENVIRONMENT_LABEL: Acceptatie 2
+            PODIUMD_ADMIN_PUBLIC_HOSTNAME: admin.podiumd.onsdorp.example:8443
+            PODIUMD_ADMIN_OIDC_ISSUER: https://keycloak.onsdorp.example/realms/podiumd
+            PODIUMD_ADMIN_OIDC_CLIENT_ID: podiumd-admin
+            PODIUMD_ADMIN_AUTH_ROLE_CLAIM: realm_access.roles
+            PODIUMD_ADMIN_AUTH_ROLES_VIEWER: podiumd-admin-viewer
+            PODIUMD_ADMIN_AUTH_ROLES_OPERATOR: podiumd-admin-operator
+            PODIUMD_ADMIN_SESSION_IDLE_TIMEOUT_MINUTES: "15"
+            PODIUMD_ADMIN_SESSION_MAX_LIFETIME_MINUTES: "240"
+            PODIUMD_ADMIN_TRUSTED_PROXIES: 10.244.0.0/16,fd00::/8
+
+  # The backend refuses an idle timeout longer than the lifetime
+  # (domain/session_timeouts.py); the chart fails at render time instead of a
+  # pod that cannot start. JSON Schema cannot compare the two values.
+  - it: refuses an idle timeout longer than the session lifetime
+    set:
+      settings.session.maxLifetimeMinutes: 15
+    asserts:
+      - failedTemplate:
+          errorMessage: settings.session.idleTimeoutMinutes must be at most settings.session.maxLifetimeMinutes
+
+  - it: allows an idle timeout equal to the session lifetime
+    set:
+      settings.session.idleTimeoutMinutes: 15
+      settings.session.maxLifetimeMinutes: 15
+    asserts:
+      - notFailedTemplate: {}
+      - equal:
+          path: data.PODIUMD_ADMIN_SESSION_MAX_LIFETIME_MINUTES
+          value: "15"
+
+  # The backend refuses the same role name for Viewer and Operator
+  # (config.py _role_mapping). The schema already forbids surrounding
+  # whitespace, so a plain comparison matches the backend's comparison after
+  # strip(). JSON Schema cannot compare the two values.
+  - it: refuses an Operator role equal to the default Viewer role
+    set:
+      settings.auth.roles.operator: viewer
+    asserts:
+      - failedTemplate:
+          errorMessage: settings.auth.roles.viewer and settings.auth.roles.operator must name different roles
+
+  - it: refuses a Viewer role equal to the default Operator role
+    set:
+      settings.auth.roles.viewer: operator
+    asserts:
+      - failedTemplate:
+          errorMessage: settings.auth.roles.viewer and settings.auth.roles.operator must name different roles
+
+  - it: allows swapping the Viewer and Operator role names
+    set:
+      settings.auth.roles.viewer: operator
+      settings.auth.roles.operator: viewer
+    asserts:
+      - notFailedTemplate: {}
+      - equal:
+          path: data.PODIUMD_ADMIN_AUTH_ROLES_VIEWER
+          value: operator
+
+  # The backend requires a public hostname port from 1 to 65535 (config.py
+  # _public_hostname); the schema only limits it to five digits. Leading zeros
+  # are allowed, as in the backend (int("08443") is 8443).
+  - it: refuses public hostname port 0
+    set:
+      settings.publicHostname: admin.podiumd.onsdorp.example:0
+    asserts:
+      - failedTemplate:
+          errorMessage: settings.publicHostname must have a port from 1 to 65535
+
+  - it: refuses public hostname port 65536
+    set:
+      settings.publicHostname: admin.podiumd.onsdorp.example:65536
+    asserts:
+      - failedTemplate:
+          errorMessage: settings.publicHostname must have a port from 1 to 65535
+
+  - it: refuses public hostname port 99999
+    set:
+      settings.publicHostname: admin.podiumd.onsdorp.example:99999
+    asserts:
+      - failedTemplate:
+          errorMessage: settings.publicHostname must have a port from 1 to 65535
+
+  - it: allows public hostname port 1
+    set:
+      settings.publicHostname: admin.podiumd.onsdorp.example:1
+    asserts:
+      - notFailedTemplate: {}
+
+  - it: allows public hostname port 65535
+    set:
+      settings.publicHostname: admin.podiumd.onsdorp.example:65535
+    asserts:
+      - notFailedTemplate: {}
+
+  # The backend limits the host without its port to 253 characters (config.py
+  # _public_hostname, _MAX_HOSTNAME_LENGTH); the schema's maxLength of 259
+  # covers the host and a port together. Each host is three 63-character
+  # labels and a 61- or 62-character label.
+  - it: refuses a public hostname of 254 characters without a port
+    set:
+      settings.publicHostname: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbc
+    asserts:
+      - failedTemplate:
+          errorMessage: settings.publicHostname must have a host of at most 253 characters
+
+  - it: allows a 253-character host with port 65535
+    set:
+      settings.publicHostname: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb:65535
+    asserts:
+      - notFailedTemplate: {}
+      - equal:
+          path: data.PODIUMD_ADMIN_PUBLIC_HOSTNAME
+          value: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb:65535
+
+  - it: refuses a 254-character host with port 1
+    set:
+      settings.publicHostname: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbc:1
+    asserts:
+      - failedTemplate:
+          errorMessage: settings.publicHostname must have a host of at most 253 characters
+
+  - it: reads a public hostname port with a leading zero as decimal
+    set:
+      settings.publicHostname: admin.podiumd.onsdorp.example:08443
+    asserts:
+      - notFailedTemplate: {}
+      - equal:
+          path: data.PODIUMD_ADMIN_PUBLIC_HOSTNAME
+          value: admin.podiumd.onsdorp.example:08443

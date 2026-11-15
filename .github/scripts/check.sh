@@ -11,10 +11,13 @@
 #   frontend   the `frontend` job: frontend/ and the e2e/ scaffold
 #   image      the `image` job: hadolint, the Dockerfile version check, the
 #              build, the smoke test and the Trivy scan (needs Docker)
+#   chart      the `chart` job: helm lint, helm-unittest and kubeconform for
+#              every supported Kubernetes version (needs Docker; kubeconform
+#              downloads the Kubernetes JSON schemas once)
 #   hooks      the script tests, the agent setup tests (.claude/tests/) and
 #              `pre-commit run --all-files`
 #   hygiene    `hooks` plus gitleaks over the full history (the `hygiene` job)
-#   all        backend, frontend, image and hygiene
+#   all        backend, frontend, image, chart and hygiene
 #
 # This script is the one list of local check commands: CLAUDE.md and the agent
 # roles in .claude/agents/ point here instead of repeating them. ci.yml runs the
@@ -31,7 +34,7 @@ set -euo pipefail
 root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)
 
 usage() {
-  echo "usage: $0 AREA... | --changed BASE HEAD   (areas: backend frontend image hooks hygiene all)" >&2
+  echo "usage: $0 AREA... | --changed BASE HEAD   (areas: backend frontend image chart hooks hygiene all)" >&2
   exit 2
 }
 
@@ -90,6 +93,13 @@ check_image() (
   step .github/scripts/image-scan.sh "$image"
 )
 
+check_chart() (
+  cd "$root"
+  step .github/scripts/chart-check.sh lint
+  step .github/scripts/chart-check.sh unittest
+  step .github/scripts/chart-check.sh kubeconform
+)
+
 check_hooks() (
   cd "$root"
   step .github/scripts/test-changed-areas.sh
@@ -119,7 +129,7 @@ if [[ $1 == --changed ]]; then
   # changed-areas.sh fails open: when it cannot tell, it reports every area.
   touched=$("$root/.github/scripts/changed-areas.sh" "$2" "$3")
   while IFS='=' read -r area value; do
-    if [[ $value == true && ($area == backend || $area == frontend || $area == image) ]]; then
+    if [[ $value == true && ($area == backend || $area == frontend || $area == image || $area == chart) ]]; then
       requested+=("$area")
     fi
   done <<<"$touched"
@@ -128,15 +138,16 @@ else
 fi
 
 # Validate every name before running anything, and expand the group names.
-backend=false frontend=false image=false hooks=false history=false
+backend=false frontend=false image=false chart=false hooks=false history=false
 for area in "${requested[@]}"; do
   case $area in
     backend) backend=true ;;
     frontend) frontend=true ;;
     image) image=true ;;
+    chart) chart=true ;;
     hooks) hooks=true ;;
     hygiene) hooks=true history=true ;;
-    all) backend=true frontend=true image=true hooks=true history=true ;;
+    all) backend=true frontend=true image=true chart=true hooks=true history=true ;;
     *)
       echo "unknown area: ${area}" >&2
       usage
@@ -147,6 +158,7 @@ done
 if [[ $backend == true ]]; then check_backend; fi
 if [[ $frontend == true ]]; then check_frontend; fi
 if [[ $image == true ]]; then check_image; fi
+if [[ $chart == true ]]; then check_chart; fi
 if [[ $hooks == true ]]; then check_hooks; fi
 if [[ $history == true ]]; then check_history; fi
 

@@ -112,6 +112,7 @@ These apply to the backend-developer, frontend-developer and platform-engineer a
 .github/scripts/check.sh backend    # uv sync, ruff, format, mypy, import-linter, pytest + coverage gate, pip-audit
 .github/scripts/check.sh frontend   # frontend/: npm ci, eslint, prettier, tsc, vitest, npm audit; then the e2e/ scaffold
 .github/scripts/check.sh image      # hadolint, Dockerfile version check, docker build, smoke test (read-only rootfs, /healthz, proxy headers off), Trivy; needs Docker
+.github/scripts/check.sh chart      # helm lint, helm-unittest, kubeconform for every supported Kubernetes version; needs Docker
 .github/scripts/check.sh hooks      # the script tests, the agent setup tests and pre-commit on all files (its fixer hooks rewrite files)
 .github/scripts/check.sh hygiene    # hooks, plus gitleaks over the full history
 .github/scripts/check.sh all

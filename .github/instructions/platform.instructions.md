@@ -4,7 +4,7 @@ applyTo: '.github/**,charts/**,Dockerfile,dev/**'
 
 # Platform review focus
 
-- **Required checks** (`backend`, `frontend`, `image`, `hygiene`, `CodeQL (python)`, `CodeQL (javascript-typescript)`, and new ones such as `chart`) must report on **every** pull request. They are gated through the `changes` job; a job that never starts leaves a pull request stuck on "Expected".
+- **Required checks** (`backend`, `frontend`, `image`, `chart`, `hygiene`, `CodeQL (python)`, `CodeQL (javascript-typescript)`, and any new ones) must report on **every** pull request. They are gated through the `changes` job; a job that never starts leaves a pull request stuck on "Expected".
 - **Fail open.** A detection step that fails or cannot decide must lead to the check running, never to a skip.
 - **Workflow security.** Least-privilege `permissions`, `persist-credentials: false`, no `pull_request_target`, no `${{ }}` with untrusted values inside `run:`, every action pinned to a full commit SHA.
 - **Shared resources.** Local check scripts can run in parallel git worktrees on one Docker daemon. Image tags, container names, ports and temp files must be unique per run.

@@ -1,0 +1,18 @@
+{{- /*
+The RBAC skeleton (task 11.4, design D8, ADR 0011): a Role in the release
+namespace only, never a ClusterRole. In this change it grants only `get` on the
+chart's own ConfigMap. Later changes add rules for Script Runs; never
+`pods/exec`, and never `list` or `watch` on Secrets (ADR 0003, ADR 0011).
+tests/rbac_test.yaml checks this.
+*/ -}}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "podiumd-admin.fullname" . }}
+  labels:
+    {{- include "podiumd-admin.labels" . | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    resourceNames: [{{ include "podiumd-admin.fullname" . | quote }}]
+    verbs: ["get"]

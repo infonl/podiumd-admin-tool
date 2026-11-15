@@ -1,0 +1,8 @@
+# Not packaged into the chart: the helm-unittest tests and their test values.
+tests/
+.DS_Store
+*.swp
+*.bak
+*.tmp
+*.orig
+*~

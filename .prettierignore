@@ -9,6 +9,9 @@
 backend/.venv/
 backend/uv.lock
 
+# Helm templates are Go templates, not YAML
+charts/*/templates/
+
 # Licence text is kept verbatim
 LICENSE
 

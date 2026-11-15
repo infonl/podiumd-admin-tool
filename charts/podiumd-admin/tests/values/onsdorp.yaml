@@ -1,0 +1,19 @@
+# The required values only, for the Onsdorp test Environment.
+settings:
+  environment:
+    municipality: Onsdorp
+    stage: test
+  publicHostname: admin.podiumd.onsdorp.example
+  oidc:
+    issuer: https://keycloak.onsdorp.example/realms/podiumd
+    clientId: podiumd-admin
+    clientSecret:
+      existingSecret: podiumd-admin-oidc
+  database:
+    app:
+      existingSecret: podiumd-admin-db-app
+    owner:
+      existingSecret: podiumd-admin-db-owner
+  session:
+    encryptionKeys:
+      existingSecret: podiumd-admin-session

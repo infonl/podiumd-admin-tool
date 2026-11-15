@@ -62,6 +62,7 @@ const AREA_ROWS = {
   backend_re: '`backend`',
   frontend_re: '`frontend`',
   image_re: '`image`',
+  chart_re: '`chart`',
   codeql_python_re: 'CodeQL (python)',
   codeql_js_re: 'CodeQL (javascript-typescript)',
 }

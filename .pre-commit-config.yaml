@@ -27,6 +27,9 @@ repos:
       - id: mixed-line-ending
         args: [--fix=lf]
       - id: check-yaml
+        # Helm templates are Go templates, not YAML; helm lint and
+        # kubeconform check what they render (the `chart` job).
+        exclude: ^charts/[^/]+/templates/
       - id: check-toml
       - id: check-json
       - id: check-merge-conflict

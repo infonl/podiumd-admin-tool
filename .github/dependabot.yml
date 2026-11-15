@@ -46,12 +46,27 @@ updates:
       github-actions:
         patterns: ["*"]
 
-  # The Trivy image for the image scan, the only docker update Dependabot can
-  # make: the main Dockerfile takes its base image versions as build args
-  # (from .nvmrc and backend/.python-version), which Dependabot cannot resolve,
-  # so those digests are bumped by hand together with the version files.
+  # The tool images in .github/tools/ (Trivy, Helm with helm-unittest, and
+  # kubeconform), the only docker updates Dependabot can make: the main
+  # Dockerfile takes its base image versions as build args (from .nvmrc and
+  # backend/.python-version), which Dependabot cannot resolve, so those
+  # digests are bumped by hand together with the version files.
   - package-ecosystem: docker
     directory: /.github/tools/trivy
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+
+  - package-ecosystem: docker
+    directory: /.github/tools/helm-unittest
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+
+  - package-ecosystem: docker
+    directory: /.github/tools/kubeconform
     schedule:
       interval: weekly
     cooldown:

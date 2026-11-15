@@ -1,0 +1,22 @@
+# The scenario "Invalid values" of the installation spec: an install without
+# the required settings fails, naming each missing value (task 11.1).
+suite: required values left out
+templates:
+  - deployment.yaml
+tests:
+  - it: names every missing required setting
+    asserts:
+      - failedTemplate:
+          errorPattern: "at '/settings': missing property 'publicHostname'"
+      - failedTemplate:
+          errorPattern: "at '/settings/environment': missing properties 'municipality', 'stage'"
+      - failedTemplate:
+          errorPattern: "at '/settings/oidc': missing properties 'issuer', 'clientId'"
+      - failedTemplate:
+          errorPattern: "at '/settings/oidc/clientSecret': missing property 'existingSecret'"
+      - failedTemplate:
+          errorPattern: "at '/settings/database/app': missing property 'existingSecret'"
+      - failedTemplate:
+          errorPattern: "at '/settings/database/owner': missing property 'existingSecret'"
+      - failedTemplate:
+          errorPattern: "at '/settings/session/encryptionKeys': missing property 'existingSecret'"

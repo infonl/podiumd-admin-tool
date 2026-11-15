@@ -1,0 +1,23 @@
+{{- if .Values.pdb.create -}}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "podiumd-admin.fullname" . }}
+  labels:
+    {{- include "podiumd-admin.labels" . | nindent 4 }}
+spec:
+  {{- /*
+  minAvailable takes precedence: the API refuses a budget with both. An unset
+  value is null or ""; 0 is set, so this is no truthiness test.
+  */}}
+  {{- $minAvailable := .Values.pdb.minAvailable }}
+  {{- $maxUnavailable := .Values.pdb.maxUnavailable }}
+  {{- if and (not (kindIs "invalid" $minAvailable)) (ne (toString $minAvailable) "") }}
+  minAvailable: {{ $minAvailable }}
+  {{- else if and (not (kindIs "invalid" $maxUnavailable)) (ne (toString $maxUnavailable) "") }}
+  maxUnavailable: {{ $maxUnavailable }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "podiumd-admin.webSelectorLabels" . | nindent 6 }}
+{{- end }}

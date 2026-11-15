@@ -1,0 +1,67 @@
+{{- /*
+The application settings that are not secret, as PODIUMD_ADMIN_* environment
+variables (backend/src/podiumd_admin/config.py). The secret settings are
+references to existing Secrets, set in deployment.yaml. Optional settings are
+left out when empty, so the Admin Tool uses its default.
+*/ -}}
+{{- $settings := .Values.settings -}}
+{{- /*
+The backend refuses an idle timeout longer than the session lifetime
+(domain/session_timeouts.py); JSON Schema cannot compare two values.
+*/ -}}
+{{- if gt (int $settings.session.idleTimeoutMinutes) (int $settings.session.maxLifetimeMinutes) }}
+{{- fail "settings.session.idleTimeoutMinutes must be at most settings.session.maxLifetimeMinutes" }}
+{{- end -}}
+{{- /*
+The backend refuses the same role name for Viewer and Operator (config.py
+_role_mapping). It compares them after strip(); the schema already forbids
+surrounding whitespace, so a plain comparison gives the same result.
+*/ -}}
+{{- if eq $settings.auth.roles.viewer $settings.auth.roles.operator }}
+{{- fail "settings.auth.roles.viewer and settings.auth.roles.operator must name different roles" }}
+{{- end -}}
+{{- /*
+The backend requires a public hostname port from 1 to 65535 (config.py
+_public_hostname); the schema only limits it to five digits. atoi parses in
+base 10, so a leading zero (:08443) is read as the backend reads it.
+*/ -}}
+{{- with regexFind ":[0-9]+$" $settings.publicHostname }}
+{{- $port := atoi (trimPrefix ":" .) }}
+{{- if or (lt $port 1) (gt $port 65535) }}
+{{- fail "settings.publicHostname must have a port from 1 to 65535" }}
+{{- end }}
+{{- end -}}
+{{- /*
+The backend limits the host without its port to 253 characters (config.py
+_public_hostname, _MAX_HOSTNAME_LENGTH). The schema's maxLength of 259 is only
+the outer bound, for a host and a port together: Helm's RE2 regular expressions
+have no lookahead, so the schema cannot limit the host alone.
+*/ -}}
+{{- if gt (len (include "podiumd-admin.host" .)) 253 }}
+{{- fail "settings.publicHostname must have a host of at most 253 characters" }}
+{{- end -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "podiumd-admin.fullname" . }}
+  labels:
+    {{- include "podiumd-admin.labels" . | nindent 4 }}
+data:
+  PODIUMD_ADMIN_ENVIRONMENT_MUNICIPALITY: {{ $settings.environment.municipality | quote }}
+  PODIUMD_ADMIN_ENVIRONMENT_STAGE: {{ $settings.environment.stage | quote }}
+  {{- with $settings.environment.label }}
+  PODIUMD_ADMIN_ENVIRONMENT_LABEL: {{ . | quote }}
+  {{- end }}
+  PODIUMD_ADMIN_PUBLIC_HOSTNAME: {{ $settings.publicHostname | quote }}
+  PODIUMD_ADMIN_OIDC_ISSUER: {{ $settings.oidc.issuer | quote }}
+  PODIUMD_ADMIN_OIDC_CLIENT_ID: {{ $settings.oidc.clientId | quote }}
+  {{- with $settings.auth.roleClaim }}
+  PODIUMD_ADMIN_AUTH_ROLE_CLAIM: {{ . | quote }}
+  {{- end }}
+  PODIUMD_ADMIN_AUTH_ROLES_VIEWER: {{ $settings.auth.roles.viewer | quote }}
+  PODIUMD_ADMIN_AUTH_ROLES_OPERATOR: {{ $settings.auth.roles.operator | quote }}
+  PODIUMD_ADMIN_SESSION_IDLE_TIMEOUT_MINUTES: {{ $settings.session.idleTimeoutMinutes | quote }}
+  PODIUMD_ADMIN_SESSION_MAX_LIFETIME_MINUTES: {{ $settings.session.maxLifetimeMinutes | quote }}
+  {{- with $settings.trustedProxies }}
+  PODIUMD_ADMIN_TRUSTED_PROXIES: {{ join "," . | quote }}
+  {{- end }}
