@@ -232,8 +232,9 @@ class Sessions:
     async def expire_abandoned(self) -> int:
         """End every Session past its idle timeout or absolute lifetime; return how many.
 
-        All entries of one sweep share a correlation id. A Session whose entry
-        cannot be stored stays, and is tried again by the next sweep.
+        All entries of one sweep share a correlation id. A Session that cannot
+        be ended is reported on stdout by ``_end``, stays, and is tried again
+        by the next sweep.
         """
         now = self._clock.now()
         correlation_id = f"expiry-sweep-{uuid.uuid4().hex}"
@@ -304,8 +305,11 @@ class Sessions:
     ) -> bool:
         """Remove the Session and record its ``session-expired`` entry, both or neither.
 
-        Returns whether this call ended it. Raises if the entry could not be
-        stored; the failure is written to stdout first, and the Session stays.
+        Returns whether this call ended it. Raises if the transaction fails at
+        any step (it cannot begin, the removal or the insert fails, or the
+        commit fails); each such failure is written to stdout exactly once
+        before it is raised, and the Session stays. Only ``Exception`` is
+        reported: cancellation propagates unreported.
         """
         entry = AuditEntry(
             occurred_at=self._clock.now(),
@@ -318,15 +322,23 @@ class Sessions:
             correlation_id=correlation_id,
             client_ip=client_ip,
         )
-        async with self._unit_of_work.begin() as transaction:
-            removed = await self._remove(transaction.sessions, ending)
-            if removed:
-                try:
-                    await transaction.audit_repository.add(entry)
-                except Exception as error:
-                    with contextlib.suppress(Exception):
-                        self._audit_sink.audit_write_failed(entry, error)
-                    raise
+        insert_failure_reported = False
+        try:
+            async with self._unit_of_work.begin() as transaction:
+                removed = await self._remove(transaction.sessions, ending)
+                if removed:
+                    try:
+                        await transaction.audit_repository.add(entry)
+                    except Exception as error:
+                        with contextlib.suppress(Exception):
+                            self._audit_sink.audit_write_failed(entry, error)
+                        insert_failure_reported = True
+                        raise
+        except Exception as error:
+            if not insert_failure_reported:
+                with contextlib.suppress(Exception):
+                    self._audit_sink.audit_write_failed(entry, error)
+            raise
         return removed
 
     async def _remove(self, store: SessionStore, ending: _Ending) -> bool:
@@ -357,8 +369,9 @@ class Sessions:
     ) -> None:
         """End the Session during a request, which gets a 401 either way.
 
-        A failure to record the expiry is already on stdout; the Session then
-        stays and the expiry sweep records it later.
+        Any failure to end it has been written to stdout by ``_end``; the
+        Session then stays and the expiry sweep tries again later.
+        Cancellation propagates.
         """
         with contextlib.suppress(Exception):
             await self._end(ending, reason, client_ip, correlation_id)

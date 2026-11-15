@@ -165,6 +165,54 @@ async def test_a_session_whose_entry_cannot_be_stored_is_kept_and_retried(
     assert len(unit_of_work.audit.entries) == 1
 
 
+async def test_a_session_whose_transaction_cannot_begin_is_reported_and_kept(
+    sessions: Sessions, unit_of_work: FakeUnitOfWork, clock: FakeClock, sink: FakeAuditSink
+) -> None:
+    unit_of_work.sessions.sessions["unreachable"] = _session("user-1")
+    unit_of_work.sessions.sessions["ended"] = _session("user-2")
+    unit_of_work.begin_error = ConnectionError("database unreachable")
+    unit_of_work.begins_before_error = 1  # find_expired succeeds, the first ending does not
+    clock.advance(timedelta(hours=1))
+
+    assert await sessions.expire_abandoned() == 1
+
+    assert list(unit_of_work.sessions.sessions) == ["unreachable"]
+    [(entry, error)] = sink.write_failures
+    assert entry.user_subject == "user-1"
+    assert isinstance(error, ConnectionError)
+
+
+async def test_a_session_whose_commit_fails_is_reported_and_kept(
+    sessions: Sessions, unit_of_work: FakeUnitOfWork, clock: FakeClock, sink: FakeAuditSink
+) -> None:
+    unit_of_work.sessions.sessions["aborted"] = _session("user-1")
+    unit_of_work.sessions.sessions["ended"] = _session("user-2")
+    unit_of_work.abort_next_audited_commit = True
+    clock.advance(timedelta(hours=1))
+
+    assert await sessions.expire_abandoned() == 1
+
+    assert list(unit_of_work.sessions.sessions) == ["aborted"]
+    [(entry, _error)] = sink.write_failures
+    assert entry.user_subject == "user-1"
+    assert [entry.user_subject for entry in unit_of_work.audit.entries] == ["user-2"]
+
+
+async def test_sessions_whose_removal_fails_are_each_reported_once(
+    sessions: Sessions, unit_of_work: FakeUnitOfWork, clock: FakeClock, sink: FakeAuditSink
+) -> None:
+    unit_of_work.sessions.sessions["first"] = _session("user-1")
+    unit_of_work.sessions.sessions["second"] = _session("user-2")
+    unit_of_work.sessions.remove_error = RuntimeError("delete failed")
+    clock.advance(timedelta(hours=1))
+
+    assert await sessions.expire_abandoned() == 0
+
+    assert set(unit_of_work.sessions.sessions) == {"first", "second"}
+    assert {entry.user_subject for entry, _error in sink.write_failures} == {"user-1", "user-2"}
+    assert len(sink.write_failures) == 2
+
+
 async def test_expired_sign_in_attempts_are_purged(
     sessions: Sessions, unit_of_work: FakeUnitOfWork, clock: FakeClock
 ) -> None:

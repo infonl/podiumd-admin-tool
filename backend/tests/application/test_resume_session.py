@@ -14,6 +14,7 @@ Spec: authentication, "Session lifetime and expiry"; access-control, "Roles"
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import replace
 from datetime import timedelta
 from typing import Any
@@ -203,6 +204,66 @@ async def test_an_expired_session_whose_entry_cannot_be_stored_is_kept_for_the_s
     assert SESSION_ID in unit_of_work.sessions.sessions
     [(entry, _error)] = sink.write_failures
     assert entry.reason is ReasonCode.IDLE
+
+
+async def test_an_expired_session_whose_transaction_cannot_begin_is_reported_once(
+    sessions: Sessions, unit_of_work: FakeUnitOfWork, clock: FakeClock, sink: FakeAuditSink
+) -> None:
+    unit_of_work.sessions.sessions[SESSION_ID] = _session()
+    unit_of_work.begin_error = ConnectionError("database unreachable")
+    unit_of_work.begins_before_error = 1  # the lookup succeeds, the ending does not
+    clock.advance(timedelta(minutes=31))
+
+    assert await _resume(sessions) is None
+
+    assert SESSION_ID in unit_of_work.sessions.sessions
+    [(entry, error)] = sink.write_failures
+    assert (entry.action, entry.reason) == ("session-expired", ReasonCode.IDLE)
+    assert isinstance(error, ConnectionError)
+
+
+async def test_an_expired_session_whose_removal_fails_is_reported_once(
+    sessions: Sessions, unit_of_work: FakeUnitOfWork, clock: FakeClock, sink: FakeAuditSink
+) -> None:
+    unit_of_work.sessions.sessions[SESSION_ID] = _session()
+    unit_of_work.sessions.remove_error = RuntimeError("delete failed")
+    clock.advance(timedelta(minutes=31))
+
+    assert await _resume(sessions) is None
+
+    assert SESSION_ID in unit_of_work.sessions.sessions
+    [(entry, _error)] = sink.write_failures
+    assert entry.action == "session-expired"
+
+
+async def test_an_expired_session_whose_commit_fails_is_reported_once(
+    sessions: Sessions, unit_of_work: FakeUnitOfWork, clock: FakeClock, sink: FakeAuditSink
+) -> None:
+    unit_of_work.sessions.sessions[SESSION_ID] = _session()
+    unit_of_work.abort_next_audited_commit = True
+    clock.advance(timedelta(minutes=31))
+
+    assert await _resume(sessions) is None
+
+    assert SESSION_ID in unit_of_work.sessions.sessions
+    assert unit_of_work.audit.entries == []
+    [(entry, _error)] = sink.write_failures
+    assert entry.action == "session-expired"
+
+
+async def test_a_cancelled_ending_propagates_and_is_not_reported(
+    sessions: Sessions, unit_of_work: FakeUnitOfWork, clock: FakeClock, sink: FakeAuditSink
+) -> None:
+    unit_of_work.sessions.sessions[SESSION_ID] = _session()
+    unit_of_work.begin_error = asyncio.CancelledError()
+    unit_of_work.begins_before_error = 1
+    clock.advance(timedelta(minutes=31))
+
+    with pytest.raises(asyncio.CancelledError):
+        await _resume(sessions)
+
+    assert SESSION_ID in unit_of_work.sessions.sessions
+    assert sink.write_failures == []
 
 
 async def test_an_idle_session_touched_by_an_overlapping_request_is_not_ended(

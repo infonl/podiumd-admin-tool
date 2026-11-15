@@ -88,9 +88,13 @@ def _expired(session: Session, *, last_seen_until: datetime, now: datetime) -> b
 
 @dataclass
 class FakeSessionStore:
-    """Sessions in a dict keyed by session identifier."""
+    """Sessions in a dict keyed by session identifier.
+
+    ``remove_error`` makes every removal raise it, as when the delete fails.
+    """
 
     sessions: dict[str, Session] = field(default_factory=dict)
+    remove_error: Exception | None = None
 
     async def add(self, session_id: str, session: Session) -> None:
         if session_id in self.sessions:
@@ -117,9 +121,13 @@ class FakeSessionStore:
         return True
 
     async def remove(self, session_id: str) -> bool:
+        if self.remove_error is not None:
+            raise self.remove_error
         return self.sessions.pop(session_id, None) is not None
 
     async def remove_by_ref(self, ref: str) -> bool:
+        if self.remove_error is not None:
+            raise self.remove_error
         for session_id in list(self.sessions):
             if _ref(session_id) == ref:
                 del self.sessions[session_id]
