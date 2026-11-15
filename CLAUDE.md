@@ -70,6 +70,8 @@ Add `resume: true` to an `implement` or `issue` run to continue it after an inte
 
 **Copilot reviews are handled proactively.** The organisation's Copilot reviewer comments within minutes of a PR being opened or pushed. The code-reviewer triages every finding, and fixes go to the developer role that owns the code. The task-manager pushes, replies, resolves and asks Copilot to review again, until a review has no new actionable findings or the round limit set at the top of the workflow script is reached. Unresolved threads block merging.
 
+**Ready to merge.** Before telling the user a PR is ready, run `.github/scripts/pr-ready.sh <n>`. It checks the head commit: not a draft, every required check green or skipped, a Copilot review of that head, and no unresolved review threads. Only `READY` counts; a summary of an earlier review doesn't.
+
 **Decisions for the user.** Design questions that a role can't settle within its scope are reported as a separate "Decisions for the user" list (question, options, recommendation), never buried among suggestions. Only the user merges, after reviewing.
 
 ## Developer rules
@@ -78,6 +80,8 @@ These apply to the backend-developer, frontend-developer and platform-engineer a
 
 - **Scope.** Implement exactly the tasks, issue or review findings you were given, in the worktree the task-manager prepared. Nothing from other task groups. Mention out-of-scope problems; don't fix them.
 - **Sources of truth.** `CONTEXT.md` (terms), `docs/adr/*` (never contradict an ADR), `openspec/changes/<change>/` (`design.md`, `specs/`, `tasks.md`) and `docs/development-requirements.md`.
+- **Pre-flight.** Before you build, read [docs/review-lessons.md](docs/review-lessons.md) and the spec requirements and scenarios (`openspec/changes/<change>/specs/`) that each task touches. If the task, the design or a standard way of doing it conflicts with a spec requirement, report it as a decision for the user **before** building on it, not after.
+- **Risk checklist.** Before you report, work through the risk checklist in your role file and add a test for every point that applies. Most defects found after "done" in this repository were concurrency, failure paths, unusual input or drift (see docs/review-lessons.md).
 - **Test-first.** Write a failing test, then make it pass, then refactor. For a review finding, first reproduce it with a failing test on the current code. Report the failing test name and how it failed.
 - **Quality gates.** Every check CI runs must pass locally before you report: run `.github/scripts/check.sh` for your area (see "Commands"). Never disable a rule without a comment explaining why.
 - **Test data.** Use **Onsdorp** as the Municipality in tests, fixtures, examples and docs, with `onsdorp.example` for host names. Never use the name of a real municipality. `@utrecht/component-library-css` and its `utrecht-*` CSS classes are the NL Design System package, not a municipality, and stay as they are.
