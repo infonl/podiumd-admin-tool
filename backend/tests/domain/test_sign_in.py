@@ -15,7 +15,9 @@ from typing import Any
 import pytest
 
 from podiumd_admin.domain.sign_in import (
+    MAX_CODE_LENGTH,
     MAX_RETURN_PATH_LENGTH,
+    MAX_STATE_LENGTH,
     SIGN_IN_ATTEMPT_LIFETIME,
     InvalidSignInAttemptError,
     SignInAttempt,
@@ -120,3 +122,14 @@ def test_the_verifier_follows_rfc_7636(verifier: str) -> None:
 def test_an_attempt_needs_an_aware_timestamp() -> None:
     with pytest.raises(InvalidSignInAttemptError, match="created_at"):
         _attempt(created_at=datetime(2026, 11, 13, 9, 0))  # noqa: DTZ001 - the invalid case
+
+
+def test_a_stored_state_never_exceeds_the_callback_bound() -> None:
+    """A callback ``state`` longer than the bound can never match, so it is refused unread."""
+    _attempt(state="s" * MAX_STATE_LENGTH)
+    with pytest.raises(InvalidSignInAttemptError, match="state"):
+        _attempt(state="s" * (MAX_STATE_LENGTH + 1))
+
+
+def test_the_callback_bounds() -> None:
+    assert (MAX_STATE_LENGTH, MAX_CODE_LENGTH) == (255, 4096)

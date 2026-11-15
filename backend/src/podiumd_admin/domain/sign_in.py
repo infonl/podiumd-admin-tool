@@ -23,6 +23,10 @@ SIGN_IN_ATTEMPT_LIFETIME: Final = timedelta(minutes=10)
 
 MAX_RETURN_PATH_LENGTH: Final = 2000
 MAX_RANDOM_VALUE_LENGTH: Final = 255
+MAX_STATE_LENGTH: Final = MAX_RANDOM_VALUE_LENGTH
+"""A callback ``state`` longer than this cannot match any attempt's ``state``."""
+MAX_CODE_LENGTH: Final = 4096
+"""A callback ``code`` longer than this is refused without being sent to Keycloak."""
 START_PAGE: Final = "/"
 
 # RFC 7636, section 4.1: 43 to 128 unreserved characters.

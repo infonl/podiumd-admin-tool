@@ -140,6 +140,65 @@ def test_a_failed_callback_creates_no_session(
     ]
 
 
+def _assert_failed(response: httpx2.Response) -> None:
+    assert response.status_code == 302
+    location = response.headers["location"]
+    assert urlsplit(location).path == "/sign-in-error"
+    assert _query(location)["correlation_id"]
+    assert SESSION_COOKIE not in response.cookies
+    _assert_sign_in_cookie_cleared(response)
+
+
+def _failures(world: AuthWorld) -> list[tuple[str | None, ReasonCode, int]]:
+    world.failures.flush_all()
+    return [(line.client_ip, line.reason, line.count) for line in world.sink.summaries]
+
+
+def test_an_oversized_state_is_an_ordinary_failed_callback(
+    auth_client: TestClient, world: AuthWorld
+) -> None:
+    """Not a 422: the attempt is used, the cookie cleared and the failure counted."""
+    state = _start(auth_client)
+    attempt_id = auth_client.cookies[SIGN_IN_COOKIE]
+
+    response = _callback(auth_client, state="s" * 256, code="code-1")
+
+    _assert_failed(response)
+    auth_client.cookies.clear()
+    auth_client.cookies.set(SIGN_IN_COOKIE, attempt_id)
+    second = _callback(auth_client, state=state, code="code-1")
+    _assert_failed(second)
+    assert world.unit_of_work.sessions.sessions == {}
+    assert world.identity_provider.exchanges == []
+    assert _failures(world) == [(CLIENT_IP, ReasonCode.INVALID_STATE, 2)]
+
+
+@pytest.mark.parametrize("param", ["code", "error"])
+def test_an_oversized_code_or_error_is_an_ordinary_failed_callback(
+    auth_client: TestClient, world: AuthWorld, param: str
+) -> None:
+    params = {"state": _start(auth_client), "code": "code-1", param: "x" * 5000}
+
+    response = _callback(auth_client, **params)
+
+    _assert_failed(response)
+    assert world.identity_provider.exchanges == []
+    assert _failures(world) == [(CLIENT_IP, ReasonCode.CALLBACK_ERROR, 1)]
+
+
+def test_an_oversized_sign_in_cookie_is_an_ordinary_failed_callback(
+    auth_client: TestClient, world: AuthWorld
+) -> None:
+    state = _start(auth_client)
+    auth_client.cookies.clear()
+    auth_client.cookies.set(SIGN_IN_COOKIE, "a" * 300)
+
+    response = _callback(auth_client, state=state, code="code-1")
+
+    _assert_failed(response)
+    assert _failures(world) == [(CLIENT_IP, ReasonCode.INVALID_STATE, 1)]
+
+
 def test_a_callback_without_the_sign_in_cookie_creates_no_session(
     auth_client: TestClient, world: AuthWorld
 ) -> None:

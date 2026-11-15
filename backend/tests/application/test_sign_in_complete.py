@@ -18,7 +18,12 @@ from podiumd_admin.application.unauthenticated_failures import UnauthenticatedFa
 from podiumd_admin.domain.audit import Outcome, ReasonCode
 from podiumd_admin.domain.roles import Role
 from podiumd_admin.domain.session_timeouts import DEFAULT_ABSOLUTE_LIFETIME
-from podiumd_admin.domain.sign_in import SIGN_IN_ATTEMPT_LIFETIME
+from podiumd_admin.domain.sign_in import (
+    MAX_CODE_LENGTH,
+    MAX_RANDOM_VALUE_LENGTH,
+    MAX_STATE_LENGTH,
+    SIGN_IN_ATTEMPT_LIFETIME,
+)
 from tests.application.conftest import AUTH_SETTINGS, CLIENT_IP, ENVIRONMENT, NOW, REDIRECT_URI
 from tests.application.fakes import (
     FakeAuditSink,
@@ -394,6 +399,80 @@ async def test_a_failed_token_exchange_creates_no_session(
     assert unit_of_work.sessions.sessions == {}
     assert unit_of_work.audit.entries == []
     assert _failure_reasons(failures, sink) == [(CLIENT_IP, ReasonCode.TOKEN_EXCHANGE_FAILED, 1)]
+
+
+async def test_an_oversized_state_is_an_invalid_state_and_consumes_the_attempt(
+    sign_in: SignIn,
+    unit_of_work: FakeUnitOfWork,
+    identity_provider: FakeIdentityProvider,
+    failures: UnauthenticatedFailureAggregator,
+    sink: FakeAuditSink,
+) -> None:
+    result = await _complete(sign_in, unit_of_work, state="s" * (MAX_STATE_LENGTH + 1))
+
+    assert result == SignInFailed(ReasonCode.INVALID_STATE)
+    assert unit_of_work.sign_in_attempts.attempts == {}
+    assert identity_provider.exchanges == []
+    assert _failure_reasons(failures, sink) == [(CLIENT_IP, ReasonCode.INVALID_STATE, 1)]
+
+
+async def test_an_oversized_code_is_a_callback_error_and_never_sent_to_keycloak(
+    sign_in: SignIn,
+    unit_of_work: FakeUnitOfWork,
+    identity_provider: FakeIdentityProvider,
+    failures: UnauthenticatedFailureAggregator,
+    sink: FakeAuditSink,
+) -> None:
+    result = await _complete(sign_in, unit_of_work, code="c" * (MAX_CODE_LENGTH + 1))
+
+    assert result == SignInFailed(ReasonCode.CALLBACK_ERROR)
+    assert identity_provider.exchanges == []
+    assert unit_of_work.sessions.sessions == {}
+    assert _failure_reasons(failures, sink) == [(CLIENT_IP, ReasonCode.CALLBACK_ERROR, 1)]
+
+
+async def test_a_code_at_the_bound_is_exchanged(
+    sign_in: SignIn, unit_of_work: FakeUnitOfWork, identity_provider: FakeIdentityProvider
+) -> None:
+    result = await _complete(sign_in, unit_of_work, code="c" * MAX_CODE_LENGTH)
+
+    assert isinstance(result, SignedIn)
+    assert len(identity_provider.exchanges) == 1
+
+
+async def test_an_oversized_error_is_a_callback_error(
+    sign_in: SignIn,
+    unit_of_work: FakeUnitOfWork,
+    identity_provider: FakeIdentityProvider,
+) -> None:
+    result = await _complete(sign_in, unit_of_work, error="e" * 10_000)
+
+    assert result == SignInFailed(ReasonCode.CALLBACK_ERROR)
+    assert identity_provider.exchanges == []
+
+
+async def test_an_oversized_attempt_id_is_not_looked_up(
+    sign_in: SignIn,
+    unit_of_work: FakeUnitOfWork,
+    failures: UnauthenticatedFailureAggregator,
+    sink: FakeAuditSink,
+) -> None:
+    oversized = "a" * (MAX_RANDOM_VALUE_LENGTH + 1)
+    started = await sign_in.start("/")
+    attempt = unit_of_work.sign_in_attempts.attempts.pop(started.attempt_id)
+    unit_of_work.sign_in_attempts.attempts[oversized] = attempt
+
+    result = await sign_in.complete(
+        attempt_id=oversized,
+        state=attempt.state,
+        code="code-1",
+        error=None,
+        client_ip=CLIENT_IP,
+        correlation_id="c-1",
+    )
+
+    assert result == SignInFailed(ReasonCode.INVALID_STATE)
+    assert _failure_reasons(failures, sink) == [(CLIENT_IP, ReasonCode.INVALID_STATE, 1)]
 
 
 async def test_a_failure_without_a_client_ip_is_not_counted(

@@ -128,12 +128,16 @@ async def callback(
     services: Annotated[AuthServices, Depends(auth_services)],
     correlation: Annotated[str, Depends(correlation_id)],
     address: Annotated[str | None, Depends(client_ip)],
-    attempt_id: Annotated[str | None, Cookie(alias=SIGN_IN_COOKIE, max_length=255)] = None,
-    state: Annotated[str | None, Query(max_length=255)] = None,
-    code: Annotated[str | None, Query(max_length=4096)] = None,
-    error: Annotated[str | None, Query(max_length=255)] = None,
+    attempt_id: Annotated[str | None, Cookie(alias=SIGN_IN_COOKIE)] = None,
+    state: Annotated[str | None, Query()] = None,
+    code: Annotated[str | None, Query()] = None,
+    error: Annotated[str | None, Query()] = None,
 ) -> RedirectResponse:
     """Complete the sign-in Keycloak sent the browser back from.
+
+    The parameters have no ``max_length`` on purpose: a 422 would skip the
+    failure path, so the attempt would not be used, the sign-in cookie not
+    cleared and the failure not counted. ``SignIn.complete`` bounds them.
 
     A session cookie the browser already holds is ignored: every successful
     sign-in gets a new session identifier. Keycloak's ``error_description``

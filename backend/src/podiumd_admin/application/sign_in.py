@@ -26,7 +26,12 @@ from podiumd_admin.application.unauthenticated_failures import UnauthenticatedFa
 from podiumd_admin.domain.audit import AuditEntry, Outcome, ReasonCode
 from podiumd_admin.domain.roles import role_from_claims
 from podiumd_admin.domain.session import Session
-from podiumd_admin.domain.sign_in import SignInAttempt
+from podiumd_admin.domain.sign_in import (
+    MAX_CODE_LENGTH,
+    MAX_RANDOM_VALUE_LENGTH,
+    MAX_STATE_LENGTH,
+    SignInAttempt,
+)
 from podiumd_admin.ports.audit import AuditSink
 from podiumd_admin.ports.clock import Clock
 from podiumd_admin.ports.identity_provider import IdentityProvider, TokenExchangeError
@@ -123,7 +128,10 @@ class SignIn:
         """Use the attempt once and, if Keycloak vouches for the user, sign them in.
 
         ``error`` is only checked for presence: Keycloak's free text is never
-        stored. Raises ``AuditWriteFailedError`` if the ``sign-in`` Audit Entry
+        stored. Oversized values take the ordinary failure path: a ``state``
+        longer than ``MAX_STATE_LENGTH`` is an invalid state, a ``code``
+        longer than ``MAX_CODE_LENGTH`` a callback error that is never sent
+        to Keycloak. Raises ``AuditWriteFailedError`` if the ``sign-in`` Audit Entry
         could not be stored, and the unit of work's error if its transaction
         was aborted (issue #30); no session exists then.
         """
@@ -133,10 +141,11 @@ class SignIn:
             attempt is None
             or attempt.is_expired(now)
             or state is None
+            or len(state) > MAX_STATE_LENGTH
             or not hmac.compare_digest(attempt.state.encode(), state.encode())
         ):
             return self._failed(ReasonCode.INVALID_STATE, client_ip)
-        if error is not None or not code:
+        if error is not None or not code or len(code) > MAX_CODE_LENGTH:
             return self._failed(ReasonCode.CALLBACK_ERROR, client_ip)
         try:
             identity = await self._identity_provider.exchange_code(
@@ -193,7 +202,8 @@ class SignIn:
         start, which replaces the sign-in cookie. It would also cost the atomic
         delete-and-return.
         """
-        if not attempt_id:
+        if not attempt_id or len(attempt_id) > MAX_RANDOM_VALUE_LENGTH:
+            # No attempt identifier is that long; not worth a lookup.
             return None
         async with self._unit_of_work.begin() as transaction:
             return await transaction.sign_in_attempts.take(attempt_id)
