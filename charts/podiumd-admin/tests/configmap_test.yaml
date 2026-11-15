@@ -129,6 +129,33 @@ tests:
     asserts:
       - notFailedTemplate: {}
 
+  # The backend limits the host without its port to 253 characters (config.py
+  # _public_hostname, _MAX_HOSTNAME_LENGTH); the schema's maxLength of 259
+  # covers the host and a port together. Each host is three 63-character
+  # labels and a 61- or 62-character label.
+  - it: refuses a public hostname of 254 characters without a port
+    set:
+      settings.publicHostname: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbc
+    asserts:
+      - failedTemplate:
+          errorMessage: settings.publicHostname must have a host of at most 253 characters
+
+  - it: allows a 253-character host with port 65535
+    set:
+      settings.publicHostname: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb:65535
+    asserts:
+      - notFailedTemplate: {}
+      - equal:
+          path: data.PODIUMD_ADMIN_PUBLIC_HOSTNAME
+          value: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb:65535
+
+  - it: refuses a 254-character host with port 1
+    set:
+      settings.publicHostname: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbc:1
+    asserts:
+      - failedTemplate:
+          errorMessage: settings.publicHostname must have a host of at most 253 characters
+
   - it: reads a public hostname port with a leading zero as decimal
     set:
       settings.publicHostname: admin.podiumd.onsdorp.example:08443

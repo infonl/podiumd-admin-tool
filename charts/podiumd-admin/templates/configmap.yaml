@@ -31,6 +31,15 @@ base 10, so a leading zero (:08443) is read as the backend reads it.
 {{- fail "settings.publicHostname must have a port from 1 to 65535" }}
 {{- end }}
 {{- end -}}
+{{- /*
+The backend limits the host without its port to 253 characters (config.py
+_public_hostname, _MAX_HOSTNAME_LENGTH). The schema's maxLength of 259 is only
+the outer bound, for a host and a port together: Helm's RE2 regular expressions
+have no lookahead, so the schema cannot limit the host alone.
+*/ -}}
+{{- if gt (len (include "podiumd-admin.host" .)) 253 }}
+{{- fail "settings.publicHostname must have a host of at most 253 characters" }}
+{{- end -}}
 apiVersion: v1
 kind: ConfigMap
 metadata:

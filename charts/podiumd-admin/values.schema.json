@@ -116,7 +116,7 @@
         },
         "publicHostname": {
           "type": "string",
-          "description": "Required. The public hostname, with an optional port and without a scheme or path, e.g. admin.podiumd.onsdorp.example. (PODIUMD_ADMIN_PUBLIC_HOSTNAME)",
+          "description": "Required. The public hostname, with an optional port and without a scheme or path, e.g. admin.podiumd.onsdorp.example. The host is at most 253 characters and the port from 1 to 65535; the chart checks both when it renders, maxLength only bounds the whole value. (PODIUMD_ADMIN_PUBLIC_HOSTNAME)",
           "minLength": 1,
           "maxLength": 259,
           "pattern": "^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*(:[0-9]{1,5})?$"
