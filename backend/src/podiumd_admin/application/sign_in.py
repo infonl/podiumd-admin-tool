@@ -185,7 +185,14 @@ class SignIn:
         return SignedIn(session_id=session_id, return_path=attempt.return_path)
 
     async def _take(self, attempt_id: str | None) -> SignInAttempt | None:
-        """Remove the attempt in its own transaction, so it is used once whatever follows."""
+        """Remove the attempt in its own transaction, so it is used once whatever follows.
+
+        The attempt is removed before ``state`` is compared, on purpose. Keeping
+        it on a mismatch would not protect a pending sign-in: anyone who can
+        force a navigation to the callback can also force one to the sign-in
+        start, which replaces the sign-in cookie. It would also cost the atomic
+        delete-and-return.
+        """
         if not attempt_id:
             return None
         async with self._unit_of_work.begin() as transaction:
