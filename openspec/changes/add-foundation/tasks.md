@@ -123,7 +123,13 @@
 - [ ] 14.2 Add pip-audit and npm audit (fail on known vulnerabilities with a fix available) to the `backend` and `frontend` jobs.
 - [ ] 14.3 Add `release.yml` for tags: build and push the image, sign it with cosign, attach an SBOM, and package and publish the Helm chart.
 
-## 15. Wrap-up
+## 15. Testing on PodiumD
 
-- [ ] 15.1 Verify that every spec scenario in this change is covered by at least one test (unit, integration, helm-unittest or e2e). Record the mapping in `docs/traceability.md`.
-- [ ] 15.2 Update CONTEXT.md if implementation surfaced new domain terms. Write a superseding ADR if any decision in design.md changed.
+- [ ] 15.1 Use the PodiumD helm-chart from `git@github.com:Dimpact-Samenwerking/helm-charts.git` and test setup from `git@github.com:infonl/podiumd-tests.git`.
+- [ ] 15.2 Split the `e2e` tests into smoke-tests for the `ci.yml` verification and deep-tests to test this admin-tool in an environment
+
+## 16. Wrap-up
+
+- [ ] 16.1 Ensure that all follow-up tasks, created as GitHub issues, have been addressed.
+- [ ] 16.2 Verify that every spec scenario in this change is covered by at least one test (unit, integration, helm-unittest or e2e). Record the mapping in `docs/traceability.md`.
+- [ ] 16.3 Update CONTEXT.md if implementation surfaced new domain terms. Write a superseding ADR if any decision in design.md changed.
