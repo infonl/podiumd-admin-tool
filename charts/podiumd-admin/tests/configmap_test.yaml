@@ -64,3 +64,76 @@ tests:
       - equal:
           path: data.PODIUMD_ADMIN_SESSION_MAX_LIFETIME_MINUTES
           value: "15"
+
+  # The backend refuses the same role name for Viewer and Operator
+  # (config.py _role_mapping). The schema already forbids surrounding
+  # whitespace, so a plain comparison matches the backend's comparison after
+  # strip(). JSON Schema cannot compare the two values.
+  - it: refuses an Operator role equal to the default Viewer role
+    set:
+      settings.auth.roles.operator: viewer
+    asserts:
+      - failedTemplate:
+          errorMessage: settings.auth.roles.viewer and settings.auth.roles.operator must name different roles
+
+  - it: refuses a Viewer role equal to the default Operator role
+    set:
+      settings.auth.roles.viewer: operator
+    asserts:
+      - failedTemplate:
+          errorMessage: settings.auth.roles.viewer and settings.auth.roles.operator must name different roles
+
+  - it: allows swapping the Viewer and Operator role names
+    set:
+      settings.auth.roles.viewer: operator
+      settings.auth.roles.operator: viewer
+    asserts:
+      - notFailedTemplate: {}
+      - equal:
+          path: data.PODIUMD_ADMIN_AUTH_ROLES_VIEWER
+          value: operator
+
+  # The backend requires a public hostname port from 1 to 65535 (config.py
+  # _public_hostname); the schema only limits it to five digits. Leading zeros
+  # are allowed, as in the backend (int("08443") is 8443).
+  - it: refuses public hostname port 0
+    set:
+      settings.publicHostname: admin.podiumd.onsdorp.example:0
+    asserts:
+      - failedTemplate:
+          errorMessage: settings.publicHostname must have a port from 1 to 65535
+
+  - it: refuses public hostname port 65536
+    set:
+      settings.publicHostname: admin.podiumd.onsdorp.example:65536
+    asserts:
+      - failedTemplate:
+          errorMessage: settings.publicHostname must have a port from 1 to 65535
+
+  - it: refuses public hostname port 99999
+    set:
+      settings.publicHostname: admin.podiumd.onsdorp.example:99999
+    asserts:
+      - failedTemplate:
+          errorMessage: settings.publicHostname must have a port from 1 to 65535
+
+  - it: allows public hostname port 1
+    set:
+      settings.publicHostname: admin.podiumd.onsdorp.example:1
+    asserts:
+      - notFailedTemplate: {}
+
+  - it: allows public hostname port 65535
+    set:
+      settings.publicHostname: admin.podiumd.onsdorp.example:65535
+    asserts:
+      - notFailedTemplate: {}
+
+  - it: reads a public hostname port with a leading zero as decimal
+    set:
+      settings.publicHostname: admin.podiumd.onsdorp.example:08443
+    asserts:
+      - notFailedTemplate: {}
+      - equal:
+          path: data.PODIUMD_ADMIN_PUBLIC_HOSTNAME
+          value: admin.podiumd.onsdorp.example:08443
