@@ -129,9 +129,9 @@
           "properties": {
             "issuer": {
               "type": "string",
-              "description": "Required. The https issuer URL of the Keycloak realm, without user, query or fragment, e.g. https://keycloak.onsdorp.example/realms/podiumd. http only for a loopback host (local development). (PODIUMD_ADMIN_OIDC_ISSUER)",
+              "description": "Required. The https issuer URL of the Keycloak realm, without user, query or fragment, e.g. https://keycloak.onsdorp.example/realms/podiumd. http only for a loopback host (local development). An optional port is 0 to 65535, as urlsplit() accepts. (PODIUMD_ADMIN_OIDC_ISSUER)",
               "minLength": 1,
-              "pattern": "^(https://[^\\s/?#@]+|http://(localhost|127\\.0\\.0\\.1|\\[::1\\])(:[0-9]{1,5})?)(/[^\\s?#]*)?$"
+              "pattern": "^(https://([^\\s/?#@:\\[\\]]+|\\[[0-9a-fA-F:.]+\\])|http://(localhost|127\\.0\\.0\\.1|\\[::1\\]))(:(0*(6553[0-5]|655[0-2][0-9]|65[0-4][0-9]{2}|6[0-4][0-9]{3}|[1-5][0-9]{4}|[0-9]{1,4}))?)?(/[^\\s?#]*)?$"
             },
             "clientId": {
               "type": "string",

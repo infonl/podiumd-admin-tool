@@ -130,6 +130,60 @@ tests:
       - failedTemplate:
           errorPattern: "at '/settings/oidc/issuer'"
 
+  # The backend reads the issuer port with urlsplit().port, which accepts an
+  # empty port or digits from 0 to 65535 and raises for anything else.
+  - it: refuses an issuer port above 65535
+    set:
+      settings.oidc.issuer: https://keycloak.onsdorp.example:99999/realms/podiumd
+    asserts:
+      - failedTemplate:
+          errorPattern: "at '/settings/oidc/issuer'"
+
+  - it: refuses issuer port 65536
+    set:
+      settings.oidc.issuer: https://keycloak.onsdorp.example:65536/realms/podiumd
+    asserts:
+      - failedTemplate:
+          errorPattern: "at '/settings/oidc/issuer'"
+
+  - it: refuses a non-numeric issuer port
+    set:
+      settings.oidc.issuer: https://keycloak.onsdorp.example:abc/realms/podiumd
+    asserts:
+      - failedTemplate:
+          errorPattern: "at '/settings/oidc/issuer'"
+
+  - it: refuses a loopback http issuer port above 65535
+    set:
+      settings.oidc.issuer: http://localhost:99999/realms/podiumd
+    asserts:
+      - failedTemplate:
+          errorPattern: "at '/settings/oidc/issuer'"
+
+  - it: allows an issuer with port 8443
+    set:
+      settings.oidc.issuer: https://keycloak.onsdorp.example:8443/realms/podiumd
+    asserts:
+      - notFailedTemplate: {}
+
+  - it: allows an issuer with port 65535
+    set:
+      settings.oidc.issuer: https://keycloak.onsdorp.example:65535/realms/podiumd
+    asserts:
+      - notFailedTemplate: {}
+
+  - it: allows an issuer with an IPv6 literal and a port
+    set:
+      settings.oidc.issuer: https://[::1]:8443/realms/podiumd
+    asserts:
+      - notFailedTemplate: {}
+
+  - it: allows a loopback http issuer with a port
+    set:
+      settings.oidc.issuer: http://localhost:8080/realms/podiumd
+    asserts:
+      - notFailedTemplate: {}
+
   - it: refuses a session lifetime above 12 hours
     set:
       settings.session.maxLifetimeMinutes: 721
