@@ -1,0 +1,61 @@
+# The optional PodDisruptionBudget (PR #58 review): minAvailable takes
+# precedence over maxUnavailable, as the API refuses a budget with both.
+suite: pdb
+templates:
+  - pdb.yaml
+values:
+  - values/onsdorp.yaml
+release:
+  name: podiumd-admin
+  namespace: podiumd
+set:
+  pdb.create: true
+tests:
+  - it: renders only maxUnavailable 1 by default
+    asserts:
+      - equal:
+          path: spec.maxUnavailable
+          value: 1
+      - notExists:
+          path: spec.minAvailable
+
+  - it: renders only minAvailable when it is set
+    set:
+      pdb.minAvailable: 1
+    asserts:
+      - equal:
+          path: spec.minAvailable
+          value: 1
+      - notExists:
+          path: spec.maxUnavailable
+
+  - it: treats minAvailable 0 as set
+    set:
+      pdb.minAvailable: 0
+    asserts:
+      - equal:
+          path: spec.minAvailable
+          value: 0
+      - notExists:
+          path: spec.maxUnavailable
+
+  - it: accepts a percentage for minAvailable
+    set:
+      pdb.minAvailable: 50%
+    asserts:
+      - equal:
+          path: spec.minAvailable
+          value: 50%
+      - notExists:
+          path: spec.maxUnavailable
+
+  - it: renders maxUnavailable when minAvailable is null
+    set:
+      pdb.minAvailable: null
+      pdb.maxUnavailable: 50%
+    asserts:
+      - equal:
+          path: spec.maxUnavailable
+          value: 50%
+      - notExists:
+          path: spec.minAvailable

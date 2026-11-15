@@ -222,9 +222,11 @@ readinessProbe:
 pdb:
   # -- Create a PodDisruptionBudget.
   create: false
-  # -- The minimum available pods; empty leaves it out.
+  # -- The minimum available pods; empty leaves it out. When set, it takes
+  # precedence and maxUnavailable is left out (the API refuses both).
   minAvailable: ""
-  # -- The maximum unavailable pods; empty leaves it out.
+  # -- The maximum unavailable pods, used when minAvailable is empty; empty
+  # leaves it out.
   maxUnavailable: 1
 
 # The migration Job, a pre-install and pre-upgrade hook that runs

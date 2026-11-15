@@ -511,11 +511,11 @@
         },
         "minAvailable": {
           "type": ["integer", "string", "null"],
-          "description": "The minimum available pods; empty leaves it out."
+          "description": "The minimum available pods; empty leaves it out. When set, it takes precedence and maxUnavailable is left out."
         },
         "maxUnavailable": {
           "type": ["integer", "string", "null"],
-          "description": "The maximum unavailable pods; empty leaves it out."
+          "description": "The maximum unavailable pods, used when minAvailable is empty; empty leaves it out."
         }
       }
     },
