@@ -1,5 +1,5 @@
 ---
-applyTo: ".github/**,charts/**,Dockerfile,dev/**"
+applyTo: '.github/**,charts/**,Dockerfile,dev/**'
 ---
 
 # Platform review focus

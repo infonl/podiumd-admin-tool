@@ -55,6 +55,7 @@ else
 fi
 
 # Unresolved review threads on the pull request (every page).
+# shellcheck disable=SC2016  # $owner, $name, $number and $endCursor are GraphQL variables for gh api, not shell expansions
 unresolved=$(gh api graphql --paginate -F owner='{owner}' -F name='{repo}' -F number="$pr" \
   -f query='query($owner:String!,$name:String!,$number:Int!,$endCursor:String){repository(owner:$owner,name:$name){pullRequest(number:$number){reviewThreads(first:100,after:$endCursor){nodes{isResolved} pageInfo{hasNextPage endCursor}}}}}' \
   --jq '[.data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved == false)] | length' | awk '{s+=$1} END {print s+0}') || exit 2
