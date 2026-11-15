@@ -44,3 +44,23 @@ tests:
             PODIUMD_ADMIN_SESSION_IDLE_TIMEOUT_MINUTES: "15"
             PODIUMD_ADMIN_SESSION_MAX_LIFETIME_MINUTES: "240"
             PODIUMD_ADMIN_TRUSTED_PROXIES: 10.244.0.0/16,fd00::/8
+
+  # The backend refuses an idle timeout longer than the lifetime
+  # (domain/session_timeouts.py); the chart fails at render time instead of a
+  # pod that cannot start. JSON Schema cannot compare the two values.
+  - it: refuses an idle timeout longer than the session lifetime
+    set:
+      settings.session.maxLifetimeMinutes: 15
+    asserts:
+      - failedTemplate:
+          errorMessage: settings.session.idleTimeoutMinutes must be at most settings.session.maxLifetimeMinutes
+
+  - it: allows an idle timeout equal to the session lifetime
+    set:
+      settings.session.idleTimeoutMinutes: 15
+      settings.session.maxLifetimeMinutes: 15
+    asserts:
+      - notFailedTemplate: {}
+      - equal:
+          path: data.PODIUMD_ADMIN_SESSION_MAX_LIFETIME_MINUTES
+          value: "15"

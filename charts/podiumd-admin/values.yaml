@@ -118,7 +118,8 @@ settings:
       # existingSecret: podiumd-admin-session
       # -- The key of the encryption keys in that Secret.
       key: encryption-keys
-    # -- Minutes a session may be idle before it ends.
+    # -- Minutes a session may be idle before it ends; at most
+    # maxLifetimeMinutes, or the chart fails to render.
     # (SESSION_IDLE_TIMEOUT_MINUTES)
     idleTimeoutMinutes: 30
     # -- Minutes a session may last at most; at most 720 (12 hours).

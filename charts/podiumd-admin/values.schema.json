@@ -286,7 +286,7 @@
             },
             "idleTimeoutMinutes": {
               "type": "integer",
-              "description": "Minutes a session may be idle before it ends. (PODIUMD_ADMIN_SESSION_IDLE_TIMEOUT_MINUTES)",
+              "description": "Minutes a session may be idle before it ends; at most maxLifetimeMinutes, which the chart checks at render time. (PODIUMD_ADMIN_SESSION_IDLE_TIMEOUT_MINUTES)",
               "default": 30,
               "minimum": 1,
               "maximum": 720

@@ -5,6 +5,13 @@ references to existing Secrets, set in deployment.yaml. Optional settings are
 left out when empty, so the Admin Tool uses its default.
 */ -}}
 {{- $settings := .Values.settings -}}
+{{- /*
+The backend refuses an idle timeout longer than the session lifetime
+(domain/session_timeouts.py); JSON Schema cannot compare two values.
+*/ -}}
+{{- if gt (int $settings.session.idleTimeoutMinutes) (int $settings.session.maxLifetimeMinutes) }}
+{{- fail "settings.session.idleTimeoutMinutes must be at most settings.session.maxLifetimeMinutes" }}
+{{- end -}}
 apiVersion: v1
 kind: ConfigMap
 metadata:
