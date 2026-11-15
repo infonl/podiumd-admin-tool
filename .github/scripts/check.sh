@@ -95,6 +95,7 @@ check_hooks() (
   step .github/scripts/test-changed-areas.sh
   step .github/scripts/test-wait-for-pr-feedback.sh
   step .github/scripts/test-check-dockerfile-versions.sh
+  step .github/scripts/test-pr-ready.sh
   # pre-commit skips .claude/, so the agent setup has its own tests: the role
   # files, the shared settings and the control flow of the workflow script.
   step node --test ".claude/tests/*.test.mjs"

@@ -36,6 +36,16 @@ First follow the **Developer rules** in `CLAUDE.md`. They cover scope, test-firs
   - Component and unit tests use Vitest and Testing Library, testing what the user sees through roles and labels.
   - User flows are `e2e/` Gherkin features written in `CONTEXT.md` terms, with playwright-bdd step definitions and axe-core checks.
 
+## Risk checklist
+
+Work through this before you report, and add a test for every point that applies (see docs/review-lessons.md).
+
+- **States.** Loading, empty, error (the defined API error bodies, a network failure, a 401 that starts sign-in) and success are all rendered and tested.
+- **Concurrency.** A slow response arriving after a newer one, a double click on an action, and leaving a page mid-request do no harm. Actions are disabled while pending.
+- **Input and output.** Long, empty, non-ASCII and markup-like values render as plain text without breaking the layout. Times are shown in Europe/Amsterdam.
+- **Accessibility.** Keyboard-only use, focus after navigation and after an error, accessible names, and nothing conveyed by colour alone. Check it with axe-core in the e2e tests.
+- **Contract.** Only the generated OpenAPI client is used, and it is regenerated from the current `openapi.json`.
+
 ## Your checks
 Run this before you report:
 ```

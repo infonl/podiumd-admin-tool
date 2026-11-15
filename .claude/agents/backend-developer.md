@@ -37,6 +37,27 @@ First follow the **Developer rules** in `CLAUDE.md`. They cover scope, test-firs
 - **Cross-stack hand-off:** if the frontend will consume your change, export `openapi.json` with the build-time script and say in your report which endpoints and models changed. The frontend-developer regenerates the client from it.
 - **Logging:** use structlog through `adapters/logging`. Never use print. Never set `log_type: "audit"` yourself; only the audit sink does that.
 
+## Risk checklist
+
+Work through this before you report, and add a test for every point that applies. These are the defect types that slipped through most often (docs/review-lessons.md).
+
+- **Concurrency (check-then-act).** Assume two requests for the same Session or row run at the same time.
+  - Every update or delete of a row that was read earlier is conditional: a `WHERE` on the value you checked, or a version column, with the affected row count checked.
+  - Never write back a whole row you read earlier; update only the fields this request changed.
+  - An operation that calls out (e.g. a token refresh at Keycloak) between read and write is serialised per key in the single replica, or made idempotent.
+  - Test it: interleave two operations in a test (two sessions, or a fake that pauses between read and write) and assert the outcome.
+- **Failure paths.** For every new action:
+  - the database unavailable;
+  - the Audit Entry insert failing;
+  - the transaction aborted or rolled back inside the block;
+  - the stdout sink failing;
+  - an external call (Keycloak) timing out or returning an error.
+
+  The action never takes effect without its Audit Entry, and the user gets the defined error.
+- **Time.** Use the `Clock` port, never `datetime.now()` in the core. Values that must not go backwards (`last_seen_at`, window bounds) stay monotonic; test a backward clock step. Boundaries (`<` versus `<=`) match the spec wording.
+- **Input from requests and configuration.** Empty, missing, malformed, very long, non-ASCII, IPv4 and IPv6, trailing slashes. Each falls back safely or is refused with a clear error, never a 500.
+- **Hot paths.** No per-request work that grows with the number of sessions, windows or entries.
+
 ## Your checks
 Run this before you report:
 ```

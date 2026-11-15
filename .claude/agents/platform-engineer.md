@@ -39,6 +39,26 @@ First follow the **Developer rules** in `CLAUDE.md`. They cover scope, test-firs
   - The Helm chart RBAC stays namespace-scoped, with no `pods/exec` and no `list`/`watch` on Secrets (ADR 0003, ADR 0011, design D8).
 - **Runtime hardening (ADR 0007):** non-root, read-only root filesystem, no privilege escalation, all capabilities dropped, and `/tmp` as an emptyDir.
 
+## Risk checklist
+
+Work through this before you report (see docs/review-lessons.md).
+
+- **Touchpoints of a new CI area or job.** All of these change together:
+  - `ci.yml`;
+  - `changed-areas.sh` and `test-changed-areas.sh`;
+  - the README path-gate table;
+  - `check.sh` (a new area);
+  - the CLAUDE.md "Commands" block;
+  - the required-check lists in the role files (reported as an orchestrator diff);
+  - a note in the PR that the user adds the job to the ruleset.
+
+  `.claude/tests/repo-consistency.test.mjs` fails when they drift.
+- **Shared resources in parallel runs.** Worktrees share one Docker daemon, ports and caches. Image tags, container names, ports and temp files are unique per run and cleaned up.
+- **Fail open, never falsely green.** A detection or gate that cannot decide runs the check. Prove every new gate by breaking it once.
+- **Dependabot.** Every pin, digest and strictness setting can still be updated by Dependabot. If it can't, document the manual bump and file a follow-up.
+- **Unusual input in scripts.** Non-ASCII, spaces, quotes and newlines in file names. Use `-z`/`--from0`, quote every expansion, and test it.
+- **Least privilege.** Workflow permissions, chart RBAC, and the hardened pod security context (ADR 0007).
+
 ## Your checks
 - `.github/scripts/check.sh hooks`. This runs the script tests (`test-changed-areas.sh`, `test-wait-for-pr-feedback.sh`, `test-check-dockerfile-versions.sh`), the agent setup tests (`.claude/tests/`) and `pre-commit run --all-files`, which covers actionlint, zizmor, shellcheck, hadolint, gitleaks and node-engines.
 - `.github/scripts/check.sh image` for the Dockerfile, the image scripts or the Trivy pin (needs Docker).
