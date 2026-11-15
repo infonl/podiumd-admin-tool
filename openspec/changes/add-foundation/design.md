@@ -80,7 +80,7 @@ Considered:
 - **Signed-cookie sessions:** rejected. They are too large and can't be revoked server-side.
 - **Redis:** rejected. It's an extra dependency for one replica.
 
-**CSRF.** `SameSite=Lax`, plus a required `X-PodiumD-Admin: 1` header on every non-GET request, including auth endpoints other than the OIDC callback and the back-channel logout (which Keycloak calls). No CORS middleware is installed. A route test asserts that every GET handler is free of side effects.
+**CSRF.** `SameSite=Lax`, plus a required `X-PodiumD-Admin: 1` header on every non-GET request, including auth endpoints other than the back-channel logout (which Keycloak calls). No CORS middleware is installed. A route test asserts that every GET handler is free of side effects, **except** the OIDC sign-in start (`GET /auth/sign-in`) and callback (`GET /auth/callback`). Those are top-level navigations in the standard Authorization Code flow (`response_mode=query`). They are protected by the single-use `state` bound to the `__Host-` sign-in cookie (`SameSite=Lax`, constant-time comparison, consumed on first use), not by the CSRF header. `response_mode=form_post` was considered and rejected (user decision, 2026-11-14): it needs a `SameSite=None` cookie and a CSP exception for Keycloak's auto-submitting form.
 
 **Proxy trust.** Forwarded headers are honoured only from the `trustedProxies` CIDRs (default: none). The client IP is the right-most address that isn't a trusted proxy.
 

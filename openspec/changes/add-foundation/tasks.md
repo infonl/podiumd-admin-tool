@@ -75,7 +75,7 @@
 
 - [ ] 8.1 Write failing tests for the `require(permission)` dependency: denied → 403 with no effect, plus an Audit Entry with `missing-permission` and the permission name; allowed reads aren't recorded. Then implement.
 - [ ] 8.2 Write failing tests for the CSRF guard. A non-GET without `X-PodiumD-Admin: 1` → refused and audited as `csrf`. The OIDC callback and back-channel endpoints are exempt. No CORS headers are ever sent. Then implement.
-- [ ] 8.3 Add a route-enumeration test. Every route is either in the explicit unauthenticated allowlist or protected by `require(...)`, and every GET route is registered as side-effect free.
+- [ ] 8.3 Add a route-enumeration test. Every route is either in the explicit unauthenticated allowlist or protected by `require(...)`, and every GET route is registered as side-effect free, apart from the OIDC sign-in start and callback (`GET /auth/sign-in`, `GET /auth/callback`), which the test allowlists by name (see design D2).
 - [ ] 8.4 Write failing tests for `GET /api/v1/audit-entries` (list with filters) and `GET /api/v1/audit-entries/{id}`, both protected by `audit-log:read`. Then implement.
 - [ ] 8.5 Write failing tests for `GET /api/v1/me`: display name, role and permissions, used by the shell. Then implement.
 
