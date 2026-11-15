@@ -334,11 +334,26 @@ async def test_an_unreachable_keycloak_keeps_the_session(
     assert unit_of_work.audit.entries == []
 
 
+@pytest.mark.parametrize("write", ["touch", "refresh"])
 async def test_a_session_ended_meanwhile_is_not_resumed(
-    sessions: Sessions, unit_of_work: FakeUnitOfWork
+    sessions: Sessions,
+    unit_of_work: FakeUnitOfWork,
+    identity_provider: FakeIdentityProvider,
+    clock: FakeClock,
+    write: str,
 ) -> None:
-    """Sign-out in another tab between reading and touching the session."""
+    """Sign-out in another tab between reading and writing the session.
+
+    On the refresh path the window spans the round trip to Keycloak, so a
+    ``save`` that finds the Session gone must not resume it either.
+    """
     unit_of_work.sessions.sessions[SESSION_ID] = _session()
+    if write == "refresh":
+        clock.advance(timedelta(minutes=6))
+        identity_provider.refreshed = identity(
+            ["operator"],
+            session_tokens=tokens(expires_at=clock.now() + timedelta(minutes=5), suffix="2"),
+        )
     original_get = unit_of_work.sessions.get
 
     async def get_then_remove(session_id: str) -> Session | None:
@@ -349,6 +364,7 @@ async def test_a_session_ended_meanwhile_is_not_resumed(
     unit_of_work.sessions.get = get_then_remove  # type: ignore[method-assign]
 
     assert await _resume(sessions) is None
+    assert identity_provider.refreshes == (["refresh-1"] if write == "refresh" else [])
     assert SESSION_ID not in unit_of_work.sessions.sessions
 
 
