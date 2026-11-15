@@ -114,6 +114,22 @@ async def test_a_fresh_access_token_is_not_refreshed(
     assert identity_provider.refreshes == []
 
 
+async def test_a_clock_that_steps_back_does_not_move_last_seen_backwards(
+    sessions: Sessions, unit_of_work: FakeUnitOfWork, clock: FakeClock
+) -> None:
+    # PR #51 review: an NTP correction can put the clock before created_at;
+    # the Session is still valid and keeps its last_seen_at, as in the database.
+    seen_at = NOW + timedelta(minutes=2)
+    unit_of_work.sessions.sessions[SESSION_ID] = _session(last_seen_at=seen_at)
+    clock.current = NOW - timedelta(minutes=1)
+
+    active = await _resume(sessions)
+
+    assert active is not None
+    assert active.session.last_seen_at == seen_at
+    assert unit_of_work.sessions.sessions[SESSION_ID].last_seen_at == seen_at
+
+
 # --- Unknown sessions --------------------------------------------------------------------
 
 
@@ -397,3 +413,27 @@ async def test_a_touch_after_a_concurrent_refresh_keeps_the_refreshed_session(
 
     assert active is not None
     assert unit_of_work.sessions.sessions[SESSION_ID] == refreshed
+
+
+async def test_a_refresh_after_the_clock_stepped_back_saves_the_refreshed_session(
+    sessions: Sessions,
+    unit_of_work: FakeUnitOfWork,
+    identity_provider: FakeIdentityProvider,
+    clock: FakeClock,
+) -> None:
+    seen_at = NOW + timedelta(minutes=2)
+    unit_of_work.sessions.sessions[SESSION_ID] = _session(
+        last_seen_at=seen_at, tokens=tokens(expires_at=NOW - timedelta(minutes=2))
+    )
+    clock.current = NOW - timedelta(minutes=1)
+    new_tokens = tokens(expires_at=NOW + timedelta(minutes=5), suffix="2")
+    identity_provider.refreshed = identity(["viewer"], session_tokens=new_tokens)
+
+    active = await _resume(sessions)
+
+    assert identity_provider.refreshes == ["refresh-1"]
+    assert active is not None
+    assert active.session.last_seen_at == seen_at
+    stored = unit_of_work.sessions.sessions[SESSION_ID]
+    assert stored.tokens == new_tokens
+    assert stored.last_seen_at == seen_at

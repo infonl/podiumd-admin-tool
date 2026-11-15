@@ -147,12 +147,15 @@ class Sessions:
                 )
                 return None
 
-        session = dataclasses.replace(refreshed or session, last_seen_at=now)
+        # Monotonic, like the store's writes: a clock that stepped back (an
+        # NTP correction) must not move last_seen_at back, or before created_at.
+        seen_at = max(session.last_seen_at, now)
+        session = dataclasses.replace(refreshed or session, last_seen_at=seen_at)
         async with self._unit_of_work.begin() as transaction:
             if refreshed is not None:
                 stored = await transaction.sessions.save(session_id, session)
             else:
-                stored = await transaction.sessions.touch(session_id, seen_at=now)
+                stored = await transaction.sessions.touch(session_id, seen_at=seen_at)
         if not stored:
             return None
         return ActiveSession(session_id=session_id, session=session)
