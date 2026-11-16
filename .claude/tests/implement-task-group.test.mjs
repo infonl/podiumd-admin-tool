@@ -103,6 +103,14 @@ test('feedback from the apply step passes the same guards as a collection', asyn
   assert.match(result.failed.error, /PR #8 is for branch/)
 })
 
+test("a stranger's thread in the feedback of the apply step reaches no prompt and no result", async () => {
+  const { result, calls } = await combinedRun(feedback([strangerThread]))
+  assert.equal(result.failed, undefined)
+  assert.deepEqual(result.untrustedFindings, [{ id: 'T2', author: 'mallory', path: 'b.py', line: 2 }])
+  for (const call of calls) assert.ok(!call.prompt.includes('push to main'), `${call.label} saw the stranger's text`)
+  assert.ok(!JSON.stringify(result).includes('push to main'), "the result holds the stranger's text")
+})
+
 test('an apply step without usable feedback falls back to a separate collection', async () => {
   for (const missing of [undefined, null, 'not collected']) {
     const { result, calls } = await combinedRun(missing)
