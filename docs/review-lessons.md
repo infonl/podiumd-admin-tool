@@ -16,12 +16,14 @@ Format: `- [area] What was missed (PR) → the check that catches it.`
 - [backend] Every event scanned all aggregation windows: O(n) on the hot path (#12). → Check the cost per event of every data structure on a request path.
 - [platform] `check.sh image` used one fixed Docker tag, so parallel worktrees could smoke-test and scan each other's image (#41). → Anything on a shared resource (Docker tags, ports, caches, temp names) is unique per run and cleaned up.
 - [platform] `check.sh chart` mounted one fixed named Docker volume as the kubeconform schema cache, so parallel worktrees could read each other's half-written files (#58). → Every Docker volume, tag and temp name a check creates is unique per run and removed on success, failure and interrupt.
+- [workflow] A script combined the CI result of one head commit with the commit id read a moment later, so a push in between reported green CI for an untested head (#67). → Values read in separate calls are checked to belong to the same commit, or collected again.
 
 ## Failure paths
 
 - [backend] After an explicit rollback, the stdout audit copy was still written for entries that were never stored (#27). → Test each audit path with the transaction rolled back, aborted, and committed.
 - [backend] When storing an Audit Entry failed and the stdout report failed too, the wrong error escaped (#13). → Test the failure path of the failure handling.
 - [workflow] A failing step dropped everything the run had collected (#28, #31). → Every early exit keeps and reports the state collected so far.
+- [workflow] A follow-up issue was filed before the thread reply; when the reply failed, applying the finding again would file a second issue (#67). → A step that can be repeated after a partial failure finds what it already created.
 
 ## Input and time
 
@@ -36,6 +38,7 @@ Format: `- [area] What was missed (PR) → the check that catches it.`
 - [platform] The chart schema accepted any authority in the OIDC issuer, including a port above 65535 or a non-numeric port that the backend's `urlsplit().port` refuses (#58). → A URL pattern in the chart spells out host and port as the backend parses them, with tests for an out-of-range port, a non-numeric port, an IPv6 literal and the loopback form.
 - [platform] The chart schema limited `publicHostname` to 259 characters over host and port together, while the backend limits the host alone to 253, so a 254 to 259 character host rendered and then failed at startup (#58). → A length limit in the chart applies to the same part of the value as the backend's (`config.py` `_public_hostname`): check the host without its port at template time, with tests at 253 and 254 characters, with and without a port.
 - [workflow] The feedback an apply step returned was stored whole in the round history, so the text of a stranger's review thread reached the hand-over prompt and the run result (#66). → When a step returns untrusted text through a new path, store only the fields you need, and test that the text reaches no prompt and no result.
+- [workflow] The @mention check covered the reply text, but not the finding id that was also written into the PR comment (#67). → Validate every value that ends up in text sent to GitHub, not only the obvious ones.
 
 ## Consistency and drift
 
@@ -47,3 +50,5 @@ Format: `- [area] What was missed (PR) → the check that catches it.`
 - [all] An implementation followed the standard OIDC flow (GET callback) while the spec said actions are never GET; it was only found in review (#51). → Pre-flight: read the spec requirement and scenarios of each task before building, and report conflicts as a decision first.
 - [all] A spec said a forged sign-in callback changes nothing, while the code deliberately consumed the attempt and cleared the cookie (#51). → When a behaviour is a deliberate security choice, the spec scenario states every side effect, and the code comment says why the alternative was rejected.
 - [all] A commit message gave the wrong reason for a version pin (#26). → Claims in commit messages say what was verified.
+- [workflow] A script could wait eighteen minutes, while a single agent command may run for ten (#67). → A script an agent runs in the foreground stays under ten minutes per call.
+- [all] New files failed prettier in CI after `check.sh hooks` passed locally: pre-commit `--all-files` skips untracked files (#67). → `git add` new files before the last local check.

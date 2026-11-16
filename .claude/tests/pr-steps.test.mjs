@@ -25,7 +25,11 @@ const text = args.join(' ')
 const say = s => { process.stdout.write(s + '\\n'); process.exit(0) }
 const fail = s => { process.stderr.write(s + '\\n'); process.exit(1) }
 for (const bad of state.failOn || []) if (text.includes(bad)) fail('stub gh: refused ' + bad)
-if (text.startsWith('pr view') && text.includes('headRefName')) say(JSON.stringify({ headRefName: state.branch, headRefOid: 'head1' }))
+if (text.startsWith('pr view') && text.includes('headRefName')) {
+  const n = Number(fs.readFileSync(path.join(dir, 'views'), 'utf8')) + 1
+  fs.writeFileSync(path.join(dir, 'views'), String(n))
+  say(JSON.stringify({ headRefName: state.branch, headRefOid: n <= (state.movedHeadViews || 0) ? 'head2' : 'head1' }))
+}
 if (text.startsWith('pr view')) say('head1')
 if (text.startsWith('pr checks')) {
   const n = Number(fs.readFileSync(path.join(dir, 'polls'), 'utf8')) + 1
@@ -37,6 +41,7 @@ if (text.startsWith('api --paginate')) say(state.reviewedCommit)
 if (text.startsWith('api graphql --paginate')) say(state.threads.map(t => JSON.stringify(t)).join('\\n'))
 if (text.includes('addPullRequestReviewThreadReply')) say('https://example.test/reply')
 if (text.includes('resolveReviewThread')) say(String(state.resolves !== false))
+if (text.startsWith('issue list')) say((state.issues || []).map(i => JSON.stringify(i)).join('\\n'))
 if (text.startsWith('issue create')) say('https://example.test/issues/9')
 if (text.startsWith('pr comment')) say('https://example.test/comment')
 if (text.startsWith('pr edit')) say('')
@@ -51,6 +56,7 @@ function run(name, args, state = {}) {
   chmodSync(join(work, 'bin', 'gh'), 0o755)
   writeFileSync(join(work, 'calls'), '')
   writeFileSync(join(work, 'polls'), '0')
+  writeFileSync(join(work, 'views'), '0')
   writeFileSync(join(work, 'state.json'), JSON.stringify({ branch: 'feat/x', reviewedCommit: 'head1', threads: [], reviews: [], ...state }))
   const files = args.map(a => {
     if (typeof a === 'string') return a
@@ -64,7 +70,7 @@ function run(name, args, state = {}) {
   try { json = JSON.parse(r.stdout) } catch { /* no JSON on a usage error */ }
   return { status: r.status, json, stdout: r.stdout, stderr: r.stderr, calls }
 }
-const writes = calls => calls.filter(c => !['pr view', 'pr checks', 'api --paginate', 'api graphql --paginate'].some(read => c.join(' ').startsWith(read)))
+const writes = calls => calls.filter(c => !['pr view', 'pr checks', 'api --paginate', 'api graphql --paginate', 'issue list'].some(read => c.join(' ').startsWith(read)))
 
 // ---------- collect-pr-feedback.mjs
 
@@ -83,13 +89,24 @@ test('collect: reports the CI result, the open threads and the review bodies', (
   assert.deepEqual(writes(calls), [], 'collecting only reads')
 })
 
-test('collect: after a timeout it waits once more, then reports what is missing', () => {
+test('collect: waits once, so one run stays under the ten-minute limit of an agent command', () => {
   const { status, json, calls } = run('collect-pr-feedback.mjs', ['7', '0', '1'], { reviewedCommit: 'older', threads: [thread] })
   assert.equal(status, 0)
   assert.deepEqual([json.timedOut, json.copilotReviewed, json.ciPassed], [true, false, true])
   assert.deepEqual(json.threads, [thread], 'the open threads are still reported')
-  // A timeout of 0 gives one poll per wait: two polls means it waited twice, and no more.
-  assert.equal(calls.filter(c => c.join(' ').startsWith('pr checks')).length, 2)
+  // A timeout of 0 gives one poll per wait.
+  assert.equal(calls.filter(c => c.join(' ').startsWith('pr checks')).length, 1)
+})
+
+test('collect: a head that moved after the wait is collected again, never mixed with the old CI result', () => {
+  const moved = run('collect-pr-feedback.mjs', ['7', '0', '1'], { movedHeadViews: 1 })
+  assert.equal(moved.status, 0)
+  assert.equal(moved.json.headSha, 'head1')
+  assert.equal(moved.calls.filter(c => c.join(' ').startsWith('pr checks')).length, 2, 'it waited again for the new head')
+  const stillMoving = run('collect-pr-feedback.mjs', ['7', '0', '1'], { movedHeadViews: 99 })
+  assert.equal(stillMoving.status, 1)
+  assert.equal(stillMoving.stdout, '')
+  assert.match(stillMoving.stderr, /head .* changed/)
 })
 
 test('collect: the thread query asks for unresolved threads on every page', () => {
@@ -157,8 +174,18 @@ test('apply: text with an @mention is refused before anything is written; backti
   assert.ok(!calls.some(c => c.includes('thread=T1')))
 })
 
+test('apply: a follow-up whose issue already exists reuses it', () => {
+  const marker = '<!-- follow-up of PR #7, finding T2 -->'
+  const first = run('apply-pr-triage.mjs', ['7', { actions: [followUp] }])
+  assert.ok(first.calls.find(c => c[0] === 'issue' && c[1] === 'create').some(a => a.includes(marker)), 'a new issue carries the marker')
+  const retry = run('apply-pr-triage.mjs', ['7', { actions: [followUp] }], { issues: [{ url: 'https://example.test/issues/4', body: 'other' }, { url: 'https://example.test/issues/5', body: `b\n\n${marker}` }] })
+  assert.equal(retry.status, 0)
+  assert.equal(retry.json.results[0].link, 'https://example.test/issues/5')
+  assert.ok(!retry.calls.some(c => c[0] === 'issue' && c[1] === 'create'), 'no second issue')
+})
+
 test('apply: a malformed file or action is a usage error, and nothing is written', () => {
-  for (const bad of [{ raw: 'not json' }, {}, { actions: [{ id: 'T1', decision: 'merge', reply: 'x' }] }, { actions: [{ id: 'T1', decision: 'fix', reply: ' ' }] }, { actions: [{ ...followUp, issueKind: 'question' }] }]) {
+  for (const bad of [{ raw: 'not json' }, {}, { actions: [{ id: 'T1', decision: 'merge', reply: 'x' }] }, { actions: [{ id: 'T1', decision: 'fix', reply: ' ' }] }, { actions: [{ ...followUp, issueKind: 'question' }] }, { actions: [{ ...bodyDecline, id: 'body:@mallory' }] }, { actions: [{ ...bodyDecline, id: 'body:x --> y' }] }, { actions: [{ ...fix, id: 'T1 @mallory' }] }]) {
     const r = run('apply-pr-triage.mjs', ['7', bad])
     assert.equal(r.status, 2, JSON.stringify(bad))
     assert.deepEqual(r.calls, [])

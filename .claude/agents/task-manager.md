@@ -74,13 +74,13 @@ The organisation runs an automatic Copilot code review on every PR, through its 
 
 ### Collect feedback
 
-1. **Run the script, and never poll or query by hand.** In the worktree, run it as one command with a 20-minute command timeout:
+1. **Run the script, and never poll or query by hand.** In the worktree, run it as one command with a 10-minute command timeout:
 
    ```
    .github/scripts/collect-pr-feedback.mjs <n>
    ```
 
-   It waits until the required checks have finished and the Copilot review of the head commit has been submitted, waits once more after a timeout, and prints one JSON object. A _skipped_ check counts as passing, because the CI path gates skip unaffected areas; the script already counts it that way. If `timedOut` is true, report what is missing (`copilotReviewed: false`, or the pending checks in `required`) instead of waiting longer.
+   It waits until the required checks have finished and the Copilot review of the head commit has been submitted, or for about nine minutes (`"timedOut": true`), and prints one JSON object. A _skipped_ check counts as passing, because the CI path gates skip unaffected areas; the script already counts it that way. If it timed out, run it **once** more. If it still timed out, report what is missing (`copilotReviewed: false`, or the pending checks in `required`) instead of waiting longer.
 2. **Copy what it reports**, without checking it again: `pr`, `headRefName`, `headSha`, `localBranch`, `linkedWorktree`, `ciPassed` and `copilotReviewed`. Write `ciSummary` from `required`.
 3. **List the findings** from two places, each with its author's login:
    - **`threads`:** every unresolved review thread, with the author and text of its first comment. Report each one as it is, whoever wrote it.
@@ -116,7 +116,7 @@ JSON
 - Leave out the findings the prompt lists as orchestrator-owned.
 - `issueKind` is `bug` or `enhancement`. The issue body gives the location, the problem and the proposed fix.
 - The script refuses text with an @mention: put such a name in backticks.
-- Copy its `results` into your report. `done` is true only when the reply or comment exists, the issue exists (for a follow-up) and the thread is resolved. If an action failed, report it as not done with its `note`; don't repeat it by hand.
+- Copy its `results` into your report. `done` is true only when the reply or comment exists, the issue exists (for a follow-up) and the thread is resolved. If an action failed, report it as not done with its `note`; don't repeat it by hand. A later round can apply it again safely: the script reuses the follow-up issue it filed before.
 
 **Unresolved threads block merging**, because the ruleset requires resolved conversations.
 
