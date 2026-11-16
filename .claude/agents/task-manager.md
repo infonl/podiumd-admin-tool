@@ -74,24 +74,19 @@ The organisation runs an automatic Copilot code review on every PR, through its 
 
 ### Collect feedback
 
-1. **Wait with the script, never by polling yourself.** In the worktree, run it as one command with a 10-minute command timeout:
+1. **Run the script, and never poll or query by hand.** In the worktree, run it as one command with a 20-minute command timeout:
 
    ```
-   .github/scripts/wait-for-pr-feedback.sh <n>
+   .github/scripts/collect-pr-feedback.mjs <n>
    ```
 
-   It returns one JSON object when the required checks have finished and the Copilot review of the head commit has been submitted, or after about nine minutes (`"timedOut": true`). If it timed out, run it **once** more. If it still timed out, report what is missing (`copilotReviewed: false`, or the pending checks) instead of waiting longer. A _skipped_ check counts as passing, because the CI path gates skip unaffected areas; the script already counts it that way.
-2. **Collect the findings** from two places, each with its author's login:
-   - **Review threads** (inline comments). The query pages through the threads with a cursor. Read every page before you pick the unresolved threads (`isResolved == false`), because resolved threads count towards each page of 100 too. The author of a thread is the author of its first comment:
-     ```
-     gh api graphql --paginate -F owner='{owner}' -F name='{repo}' -F number=<n> -f query='query($owner:String!,$name:String!,$number:Int!,$endCursor:String){repository(owner:$owner,name:$name){pullRequest(number:$number){reviewThreads(first:100, after:$endCursor){nodes{id isResolved path line comments(first:5){nodes{author{login} body}}} pageInfo{hasNextPage endCursor}}}}}'
-     ```
-   - **Findings in the review body**, e.g. "previously missed issues". These have no thread. Reviews come back oldest first, 30 per page, so always read all pages. The author is the review's `user.login`:
-     ```
-     gh api --paginate "repos/{owner}/{repo}/pulls/<n>/reviews"
-     ```
+   It waits until the required checks have finished and the Copilot review of the head commit has been submitted, waits once more after a timeout, and prints one JSON object. A _skipped_ check counts as passing, because the CI path gates skip unaffected areas; the script already counts it that way. If `timedOut` is true, report what is missing (`copilotReviewed: false`, or the pending checks in `required`) instead of waiting longer.
+2. **Copy what it reports**, without checking it again: `pr`, `headRefName`, `headSha`, `localBranch`, `linkedWorktree`, `ciPassed` and `copilotReviewed`. Write `ciSummary` from `required`.
+3. **List the findings** from two places, each with its author's login:
+   - **`threads`:** every unresolved review thread, with the author and text of its first comment. Report each one as it is, whoever wrote it.
+   - **`reviews`:** every review with a non-empty body, oldest first. A body can hold findings that have no thread, e.g. "previously missed issues". Report each such finding as `kind: "body"` with an id `body:<short-slug>`, unless a thread or the already-handled list in your prompt covers it. A body that only summarises the review is not a finding.
 
-   The Copilot reviewer's login is `copilot-pull-request-reviewer[bot]` in the REST API and `copilot-pull-request-reviewer` in GraphQL. Report every unresolved thread, whoever wrote it: the workflow handles only the Copilot reviewer's findings (and those of logins the orchestrator trusts) and lists the rest for the user.
+   The Copilot reviewer's login is `copilot-pull-request-reviewer[bot]` in `reviews` and `copilot-pull-request-reviewer` in `threads`. The workflow handles only the Copilot reviewer's findings (and those of logins the orchestrator trusts) and lists the rest for the user.
 
 #### Infrastructure failures
 
@@ -100,19 +95,36 @@ If a required job failed, read its log (`gh run view <run> --log-failed`). If it
 ### Apply the triage
 
 The code-reviewer gave one decision per finding. Carry out exactly those:
-- **fix:** the developer fixed it and the reviewer approved. Before pushing, add one line to `docs/review-lessons.md` under the matching heading, in its format: `- [area] What was missed (#<pr>) → the check that catches it.` Use the code-reviewer's reason and expected fix, and commit it with the fixes (`docs: add a review lesson from #<pr>`). Then push, reply in the thread naming the commit, and resolve the thread.
-- **follow-up:** create a GitHub issue labelled `follow-up` (plus `bug` or `enhancement`) that gives the location, the problem and the proposed fix. Reply in the thread with the issue link, and resolve it.
-- **decline:** reply with the code-reviewer's reasoning, and resolve the thread.
+- **fix:** the developer fixed it and the reviewer approved. Before pushing, add one line to `docs/review-lessons.md` under the matching heading, in its format: `- [area] What was missed (#<pr>) → the check that catches it.` Use the code-reviewer's reason and expected fix, and commit it with the fixes (`docs: add a review lesson from #<pr>`). The reply is the developer's reply, naming the commit.
+- **follow-up:** a GitHub issue labelled `follow-up` (plus `bug` or `enhancement`). The script adds the issue link to the reply.
+- **decline:** the reply is the code-reviewer's reasoning.
 
-Use the GraphQL mutations `addPullRequestReviewThreadReply` and `resolveReviewThread`. Findings without a thread get their fix, issue or reasoning in one PR comment. Leave the findings the prompt lists as orchestrator-owned untouched.
+**Push first**, so a reply can name a commit that is on the branch. Then write the decisions to a JSON file outside the worktree and let the script do the replies, issues, resolving and the review request:
 
-When the prompt says so, request a new Copilot review after pushing: `gh pr edit <n> --add-reviewer @copilot`. **Unresolved threads block merging**, because the ruleset requires resolved conversations.
+```
+dir=$(mktemp -d) && cat >"$dir/triage.json" <<'JSON'
+{"requestReview": true,
+ "actions": [
+   {"id": "PRRT_...", "decision": "fix", "reply": "Fixed in abc1234. ..."},
+   {"id": "PRRT_...", "decision": "follow-up", "reply": "...", "issueTitle": "...", "issueBody": "...", "issueKind": "bug"},
+   {"id": "body:short-slug", "decision": "decline", "reply": "..."}]}
+JSON
+.github/scripts/apply-pr-triage.mjs <n> "$dir/triage.json"
+```
+
+- Set `requestReview` as the prompt says: a new Copilot review is only needed after a push.
+- Leave out the findings the prompt lists as orchestrator-owned.
+- `issueKind` is `bug` or `enhancement`. The issue body gives the location, the problem and the proposed fix.
+- The script refuses text with an @mention: put such a name in backticks.
+- Copy its `results` into your report. `done` is true only when the reply or comment exists, the issue exists (for a follow-up) and the thread is resolved. If an action failed, report it as not done with its `note`; don't repeat it by hand.
+
+**Unresolved threads block merging**, because the ruleset requires resolved conversations.
 
 When the prompt also asks for the feedback on the head you pushed, collect it as described under "Collect feedback" once the review is requested, and return it in `feedback`. If you cannot collect it, leave `feedback` out and say why in `summary`: the workflow then collects it in a separate step.
 
 ### Push fixes
 
-Push the approved fix commits on the feature branch and, when the prompt says so, request a new Copilot review. Nothing else.
+Push the approved fix commits on the feature branch and, when the prompt says so, request a new Copilot review with `gh pr edit <n> --add-reviewer @copilot`. Nothing else.
 
 ## Hand over
 

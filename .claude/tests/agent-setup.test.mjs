@@ -141,9 +141,11 @@ test('the shared allowlist is read-only', () => {
     'gh issue create --title x',
     'gh api graphql -f query=x',
     'gh run rerun 1 --failed',
+    // It replies, resolves threads and files issues.
+    '.github/scripts/apply-pr-triage.mjs 31 /tmp/x/triage.json',
   ]
   for (const command of writes) assert.ok(!allowed(command), `the allowlist allows a write: ${command}`)
-  for (const command of ['gh pr checks 31 --required', '.github/scripts/check.sh backend', 'git status --short']) {
+  for (const command of ['gh pr checks 31 --required', '.github/scripts/check.sh backend', 'git status --short', '.github/scripts/collect-pr-feedback.mjs 31']) {
     assert.ok(allowed(command), `the allowlist no longer allows: ${command}`)
   }
 })
