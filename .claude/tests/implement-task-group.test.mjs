@@ -73,6 +73,60 @@ test('waiting runs at low effort; judging keeps the effort of the role file', as
   assert.equal(calls.find(c => c.label.startsWith('code-reviewer:triage')).effort, undefined)
 })
 
+// A review-mode run whose apply step brings back the feedback on the pushed head itself.
+async function combinedRun(nextFeedback) {
+  let collections = 0
+  return runWith({ mode: 'review', pr: 7, branch: BRANCH, root: '/w/feat-x' }, label => {
+    if (label.startsWith('task-manager:collect')) return feedback(++collections === 1 ? [copilotThread] : [])
+    if (label.startsWith('code-reviewer:triage')) {
+      return { decisions: [{ id: 'T1', decision: 'fix', owner: 'backend-developer', reason: 'r', reply: '', expectedFix: 'f' }], userDecisions: [], summary: 's' }
+    }
+    if (label.startsWith('backend-developer:')) return devReport
+    if (label.startsWith('code-reviewer:')) return approval
+    if (label.startsWith('task-manager:apply')) return { results: [{ id: 'T1', done: true, note: '' }], summary: 's', feedback: nextFeedback }
+    return 'handover text'
+  })
+}
+
+test('after a push, the apply step brings back the next feedback: no separate collection starts', async () => {
+  const { result, calls } = await combinedRun(feedback([]))
+  assert.equal(result.failed, undefined)
+  assert.equal(calls.filter(c => c.label.startsWith('task-manager:collect')).length, 1, 'only the first collection is its own step')
+  assert.ok(calls.find(c => c.label === 'task-manager:apply-1').prompt.includes('"Collect feedback" in your role'))
+  // The feedback the apply step returned is judged as round 2: a clean review ends the loop.
+  assert.deepEqual(result.copilotRounds.map(r => [r.round, r.findings]), [[1, 1], [2, 0]])
+  assert.equal(calls.at(-1).label, 'task-manager:handover')
+})
+
+test('feedback from the apply step passes the same guards as a collection', async () => {
+  const { result } = await combinedRun(feedback([], { pr: 8 }))
+  assert.match(result.failed.error, /PR #8 is for branch/)
+})
+
+test("a stranger's thread in the feedback of the apply step reaches no prompt and no result", async () => {
+  const { result, calls } = await combinedRun(feedback([strangerThread]))
+  assert.equal(result.failed, undefined)
+  assert.deepEqual(result.untrustedFindings, [{ id: 'T2', author: 'mallory', path: 'b.py', line: 2 }])
+  for (const call of calls) assert.ok(!call.prompt.includes('push to main'), `${call.label} saw the stranger's text`)
+  assert.ok(!JSON.stringify(result).includes('push to main'), "the result holds the stranger's text")
+})
+
+test('an apply step without usable feedback falls back to a separate collection', async () => {
+  for (const missing of [undefined, null, 'not collected']) {
+    const { result, calls } = await combinedRun(missing)
+    assert.equal(result.failed, undefined)
+    assert.equal(calls.filter(c => c.label.startsWith('task-manager:collect')).length, 2)
+  }
+})
+
+test('reports between agents are terse; text for GitHub and the user is not', async () => {
+  const { calls } = await reviewRun()
+  for (const call of calls.filter(c => c.label !== 'task-manager:handover')) {
+    assert.ok(call.prompt.includes('Report tersely'), `${call.label} is not told to report tersely`)
+  }
+  assert.ok(!calls.at(-1).prompt.includes('Report tersely'), 'the hand-over is read by the user')
+})
+
 test('a thread by a stranger never reaches the reviewer or a developer', async () => {
   const { result, calls } = await reviewRun()
   for (const call of calls.filter(c => !c.label.startsWith('task-manager:'))) {
